@@ -2,21 +2,17 @@
 """Plot gym occupancy for Monday to Sunday, from opening to closing time."""
 
 import argparse
-import csv
-from collections import defaultdict
-from datetime import datetime
 from pathlib import Path
-from statistics import mean
 
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from poll import CLOSE_MINUTE, DEFAULT_CSV, INTERVAL_MINUTES, OPEN_MINUTE
+from history import CLOSE_MINUTE, INTERVAL_MINUTES, OPEN_MINUTE, SLOTS, average_by_slot, clock, load
+from poll import DEFAULT_CSV
 
 DAY_NAMES = ["Pondělí", "Úterý", "Středa", "Čtvrtek", "Pátek", "Sobota", "Neděle"]
-SLOTS = list(range(OPEN_MINUTE, CLOSE_MINUTE + 1, INTERVAL_MINUTES))
 DEFAULT_OUT = Path(__file__).parent / "data" / "gym_occupancy.png"
 
 SURFACE = "#fcfcfb"
@@ -27,32 +23,9 @@ SINGLE_DAY = "#c3c2b7"
 AVERAGE = "#2a78d6"
 
 
-def load(path: Path) -> tuple[dict, int]:
-    """Return ({weekday: {date: {slot: count}}}, latest capacity)."""
-    days = defaultdict(lambda: defaultdict(dict))
-    capacity = 0
-    with path.open(newline="") as f:
-        for row in csv.DictReader(f):
-            when = datetime.fromisoformat(row["timestamp"])
-            minute = when.hour * 60 + when.minute
-            slot = minute - minute % INTERVAL_MINUTES
-            if slot in range(OPEN_MINUTE, CLOSE_MINUTE + 1):
-                days[when.weekday()][when.date()][slot] = int(row["count"])
-                capacity = int(row["capacity"])
-    return days, capacity
-
-
 def series(values: dict) -> list[float]:
     """Align {slot: value} to all slots; gaps become NaN so the line breaks."""
     return [values.get(slot, float("nan")) for slot in SLOTS]
-
-
-def average_by_slot(dates: dict) -> dict:
-    by_slot = defaultdict(list)
-    for values in dates.values():
-        for slot, count in values.items():
-            by_slot[slot].append(count)
-    return {slot: mean(counts) for slot, counts in by_slot.items()}
 
 
 def isolated_slots(values: dict) -> list[int]:
@@ -62,10 +35,6 @@ def isolated_slots(values: dict) -> list[int]:
         for slot in values
         if slot - INTERVAL_MINUTES not in values and slot + INTERVAL_MINUTES not in values
     ]
-
-
-def clock(minute: int) -> str:
-    return f"{minute // 60:02d}:{minute % 60:02d}"
 
 
 def draw_day(ax, weekday: int, dates: dict, capacity: int) -> None:
@@ -119,8 +88,13 @@ def plot(csv_path: Path, out_path: Path) -> None:
         fontsize=10, color=SECONDARY_INK,
     )
     fig.subplots_adjust(left=0.06, right=0.98, top=0.915, bottom=0.03, hspace=0.38)
-    fig.savefig(out_path, dpi=150)
-    print(f"Saved {out_path}")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    # Write next to the target and rename, so nobody ever reads a half-written PNG.
+    tmp = out_path.with_name(out_path.name + ".tmp")
+    fig.savefig(tmp, dpi=150, format="png")
+    plt.close(fig)
+    tmp.replace(out_path)
+    print(f"Saved {out_path}", flush=True)
 
 
 def main() -> None:

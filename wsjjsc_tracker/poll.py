@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Every 10 minutes during opening hours, append the gym head count to a CSV."""
+"""Every 10 minutes during opening hours, append the gym head count to a CSV.
+
+Inside the Home Assistant add-on it also publishes sensors after every sample
+and, with --plot-out, redraws the weekly chart once a day after closing time.
+"""
 
 import argparse
 import csv
@@ -9,15 +13,15 @@ import time
 import urllib.request
 from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
+
+import ha
+from history import CLOSE_MINUTE, TZ, is_open, minute_of_day, slot_of
 
 URL = "https://wsjjsc.com.tw/"
 USER_AGENT = "wsjjsc-tracker/1.0"
-TZ = ZoneInfo("Asia/Taipei")
-OPEN_MINUTE = 6 * 60
-CLOSE_MINUTE = 22 * 60
-INTERVAL_MINUTES = 10
 CHECK_EVERY_SECONDS = 20
+# States pushed through the REST API vanish when Home Assistant restarts.
+REPUBLISH_EVERY_SECONDS = 5 * 60
 # Worst case (every attempt hits the 30 s timeout) is ~4 minutes, well inside one slot.
 MAX_ATTEMPTS = 5
 RETRY_DELAYS_SECONDS = [10, 20, 30, 30]
@@ -98,23 +102,55 @@ def poll_once(path: Path) -> None:
 
 def current_slot(now: datetime) -> tuple | None:
     """Return an id for the current 10-minute slot, or None when the gym is closed."""
-    minute_of_day = now.hour * 60 + now.minute
-    # Closing time itself counts, so the last sample is taken at 22:00.
-    if not OPEN_MINUTE <= minute_of_day <= CLOSE_MINUTE:
+    if not is_open(now):
         return None
-    return now.date(), minute_of_day - minute_of_day % INTERVAL_MINUTES
+    return now.date(), slot_of(now)
 
 
-def run(path: Path) -> None:
+def publish(path: Path) -> None:
+    if ha.enabled():
+        try:
+            ha.publish(path)
+        except Exception as e:
+            print(f"Home Assistant update failed: {e}", file=sys.stderr, flush=True)
+
+
+def draw(csv_path: Path, out_path: Path) -> None:
+    try:
+        import plot  # matplotlib is heavy and only needed here
+        plot.plot(csv_path, out_path)
+    except Exception as e:
+        print(f"Plot failed: {e}", file=sys.stderr, flush=True)
+
+
+def run(path: Path, plot_out: Path | None) -> None:
     print(f"Writing to {path} (Ctrl+C to stop)", flush=True)
+    if ha.enabled():
+        print("Publishing sensors to Home Assistant", flush=True)
+    if plot_out:
+        print(f"Drawing chart to {plot_out} every day after closing", flush=True)
+        if not plot_out.exists():
+            draw(path, plot_out)
     last_slot = None
+    last_publish = 0.0
+    last_plot_day = None
     # Compare wall-clock slots instead of sleeping 10 minutes, so that the
     # schedule stays aligned to :00, :10, ... and survives the laptop sleeping.
     while True:
-        slot = current_slot(datetime.now(TZ))
+        now = datetime.now(TZ)
+        slot = current_slot(now)
         if slot is not None and slot != last_slot:
             last_slot = slot
             poll_once(path)
+            publish(path)
+            last_publish = time.monotonic()
+        elif time.monotonic() - last_publish >= REPUBLISH_EVERY_SECONDS:
+            publish(path)
+            last_publish = time.monotonic()
+        # After the 22:00 sample: redraw once per day.
+        if plot_out and minute_of_day(now) > CLOSE_MINUTE and last_plot_day != now.date():
+            last_plot_day = now.date()
+            draw(path, plot_out)
         time.sleep(CHECK_EVERY_SECONDS)
 
 
@@ -122,12 +158,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--csv", type=Path, default=DEFAULT_CSV)
     parser.add_argument("--once", action="store_true", help="take one sample now and exit")
+    parser.add_argument("--plot-out", type=Path, help="PNG redrawn every day after closing")
     args = parser.parse_args()
     if args.once:
         poll_once(args.csv)
+        publish(args.csv)
         return
     try:
-        run(args.csv)
+        run(args.csv, args.plot_out)
     except KeyboardInterrupt:
         pass
 

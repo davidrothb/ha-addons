@@ -12,7 +12,7 @@ Vlastní add-ony pro Home Assistant.
 
 | Add-on | Popis |
 | --- | --- |
-| [WSJJSC Tracker](wsjjsc_tracker/) | Každých 10 minut zapisuje obsazenost posilovny Taipei Zhongzheng Sports Center do CSV. |
+| [WSJJSC Tracker](wsjjsc_tracker/) | Obsazenost posilovny Taipei Zhongzheng Sports Center jako senzory v HA, CSV historie a denní graf. |
 
 ## Nový add-on
 
