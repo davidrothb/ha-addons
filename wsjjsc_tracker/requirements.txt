@@ -1,0 +1,2 @@
+# Jen pro plot.py na lokálním počítači; add-on nepotřebuje nic mimo standardní knihovnu.
+matplotlib

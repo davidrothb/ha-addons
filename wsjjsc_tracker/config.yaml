@@ -1,0 +1,14 @@
+name: WSJJSC Tracker
+version: "1.0.1"
+slug: wsjjsc_tracker
+description: Každých 10 minut zapisuje obsazenost posilovny do /share/wsjjsc_tracker/gym_occupancy.csv
+url: https://github.com/davidrothb/ha-addons/tree/main/wsjjsc_tracker
+arch:
+  - aarch64
+  - amd64
+  - armv7
+startup: application
+boot: auto
+map:
+  - type: share
+    read_only: false

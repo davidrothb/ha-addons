@@ -1,2 +1,20 @@
 # ha-addons
-custom homeassistant addons
+
+Vlastní add-ony pro Home Assistant.
+
+## Instalace
+
+1. V Home Assistantu otevři **Nastavení → Doplňky → Obchod s doplňky**.
+2. Vpravo nahoře **⋮ → Repozitáře** a přidej `https://github.com/davidrothb/ha-addons`.
+3. Add-ony z tohoto repozitáře se objeví dole v seznamu.
+
+## Add-ony
+
+| Add-on | Popis |
+| --- | --- |
+| [WSJJSC Tracker](wsjjsc_tracker/) | Každých 10 minut zapisuje obsazenost posilovny Taipei Zhongzheng Sports Center do CSV. |
+
+## Nový add-on
+
+Každý add-on má vlastní složku s `config.yaml`, `Dockerfile` a `README.md`.
+Po každé změně zvyš `version` v `config.yaml`, jinak Home Assistant aktualizaci nenabídne.
