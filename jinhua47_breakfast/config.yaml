@@ -1,5 +1,5 @@
 name: Jinhua47 Snídaně
-version: "0.1.0"
+version: "0.2.0"
 slug: jinhua47_breakfast
 description: Společná ranní objednávka snídaně z 金華47 (zatím testovací základ)
 url: https://github.com/davidrothb/ha-addons/tree/main/jinhua47_breakfast
@@ -15,8 +15,8 @@ panel_title: Snídaně
 homeassistant_api: true
 hassio_api: true
 options:
-  notify_service: ""
-  show_in_sidebar: true
+  iding_phone: ""
+  iding_password: ""
 schema:
-  notify_service: str?
-  show_in_sidebar: bool
+  iding_phone: str?
+  iding_password: password?

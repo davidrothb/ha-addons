@@ -6,77 +6,161 @@
 <title>Jinhua47 Snídaně</title>
 <style>
   :root {
-    --bg: #f5f5f4; --card: #ffffff; --text: #1c1917; --muted: #78716c;
+    --bg: #f5f5f4; --card: #ffffff; --text: #1c1917; --muted: #78716c; --line: #e7e5e4;
     --accent: #c2410c; --accent-text: #ffffff; --ok: #15803d; --err: #b91c1c;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #111111; --card: #1c1c1c; --text: #f5f5f4; --muted: #a8a29e;
+      --bg: #111111; --card: #1c1c1c; --text: #f5f5f4; --muted: #a8a29e; --line: #333333;
       --accent: #f97316; --accent-text: #111111; --ok: #4ade80; --err: #f87171;
     }
   }
   * { box-sizing: border-box; }
   body {
     margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
-    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    display: flex; align-items: center; justify-content: center; padding: 16px;
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; padding: 16px;
   }
-  main {
-    width: 100%; max-width: 420px; background: var(--card); border-radius: 16px;
-    padding: 32px 24px; text-align: center; box-shadow: 0 1px 3px rgb(0 0 0 / .12);
+  .wrap { max-width: 480px; margin: 0 auto; display: grid; gap: 16px; }
+  section {
+    background: var(--card); border-radius: 16px; padding: 24px;
+    box-shadow: 0 1px 3px rgb(0 0 0 / .12);
   }
+  .hello { text-align: center; padding: 32px 24px; }
   h1 { margin: 0 0 8px; font-size: 28px; }
+  h2 { margin: 0 0 16px; font-size: 18px; }
   p { margin: 0 0 24px; color: var(--muted); }
   button {
     width: 100%; padding: 14px; border: 0; border-radius: 12px; cursor: pointer;
     background: var(--accent); color: var(--accent-text); font: inherit; font-weight: 600;
   }
   button:disabled { opacity: .6; cursor: wait; }
-  #status { margin-top: 16px; min-height: 1.5em; font-size: 14px; }
-  #status.ok { color: var(--ok); }
-  #status.err { color: var(--err); }
-  #status code { font-size: 13px; }
+  .status { margin-top: 12px; min-height: 1.5em; font-size: 14px; }
+  .ok { color: var(--ok); }
+  .err { color: var(--err); }
+  .row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 0; border-bottom: 1px solid var(--line);
+  }
+  .row:last-of-type { border-bottom: 0; }
+  .row span { min-width: 0; overflow-wrap: anywhere; }
+  .badge { font-size: 12px; color: var(--muted); margin-left: 6px; }
+  select {
+    flex: 0 1 220px; min-width: 0; padding: 8px; border-radius: 8px; font: inherit;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text);
+  }
+  dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; font-size: 15px; }
+  dt { color: var(--muted); }
+  dd { margin: 0; }
+  .hint { font-size: 13px; color: var(--muted); margin: 12px 0 0; }
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
-<main>
-  <h1>Ahoj {{NAME}}</h1>
-  <p>Testovací základ doplňku Jinhua47 Snídaně.</p>
-  <button id="notify">Poslat testovací oznámení</button>
-  <div id="status" role="status"></div>
-</main>
-<script>
-  const button = document.getElementById("notify");
-  const status = document.getElementById("status");
+<div class="wrap">
+  <section class="hello">
+    <h1>Ahoj {{NAME}}</h1>
+    <p>Testovací základ doplňku Jinhua47 Snídaně.</p>
+    <button id="notify">Poslat testovací oznámení</button>
+    <div id="notify-status" class="status" role="status"></div>
+  </section>
 
-  function show(kind, text, available) {
-    status.className = kind;
-    status.textContent = text;
-    if (available && available.length) {
-      status.append(document.createElement("br"), "Dostupné telefony: ");
-      available.forEach((name, i) => {
-        const code = document.createElement("code");
-        code.textContent = "notify." + name;
-        status.append(i ? ", " : "", code);
-      });
-    }
+  <section id="admin" hidden>
+    <h2>Telefony uživatelů</h2>
+    <div id="users"></div>
+    <button id="save" style="margin-top: 16px">Uložit</button>
+    <div id="save-status" class="status" role="status"></div>
+  </section>
+
+  <section id="iding" hidden>
+    <h2>Účet iding</h2>
+    <dl>
+      <dt>Telefon</dt><dd id="iding-phone"></dd>
+      <dt>Heslo</dt><dd id="iding-password"></dd>
+    </dl>
+    <p class="hint">Mění se v Nastavení → Doplňky → Jinhua47 Snídaně → Konfigurace.</p>
+  </section>
+</div>
+<script>
+  // Relative URLs keep the Ingress prefix; the query keeps ?as= in dev mode.
+  const api = (path, options) => fetch(path + location.search, options).then(async (response) => {
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || "Chyba " + response.status);
+    return body;
+  });
+
+  function show(id, kind, text) {
+    const el = document.getElementById(id);
+    el.className = "status " + kind;
+    el.textContent = text;
   }
 
-  button.addEventListener("click", async () => {
-    button.disabled = true;
-    show("", "Odesílám…");
+  const notifyButton = document.getElementById("notify");
+  notifyButton.addEventListener("click", async () => {
+    notifyButton.disabled = true;
+    show("notify-status", "", "Odesílám…");
     try {
-      // Relative URL keeps the Ingress prefix; the query keeps ?as= in dev mode.
-      const response = await fetch("api/notify" + location.search, { method: "POST" });
-      const body = await response.json();
-      if (response.ok) show("ok", "Oznámení odesláno na " + body.service + ".");
-      else show("err", body.error, body.available);
+      const body = await api("api/notify", { method: "POST" });
+      show("notify-status", "ok", "Oznámení odesláno na " + body.service + ".");
     } catch (err) {
-      show("err", "Doplněk neodpověděl: " + err.message);
+      show("notify-status", "err", err.message);
     } finally {
-      button.disabled = false;
+      notifyButton.disabled = false;
     }
   });
+
+  async function loadAdmin() {
+    const data = await api("api/admin");
+    const list = document.getElementById("users");
+    list.replaceChildren();
+    for (const user of data.users) {
+      const row = document.createElement("label");
+      row.className = "row";
+      const name = document.createElement("span");
+      name.textContent = user.name;
+      if (user.is_admin) {
+        const badge = document.createElement("span");
+        badge.className = "badge";
+        badge.textContent = "admin";
+        name.append(badge);
+      }
+      const select = document.createElement("select");
+      select.dataset.user = user.id;
+      select.append(new Option("— bez telefonu —", ""));
+      for (const phone of data.phones) select.append(new Option(phone.label, phone.service));
+      select.value = user.phone || "";
+      row.append(name, select);
+      list.append(row);
+    }
+    if (!data.phones.length) show("save-status", "err", "Home Assistant nemá žádný telefon s aplikací Companion.");
+
+    document.getElementById("iding-phone").textContent = data.iding.phone || "nevyplněno";
+    document.getElementById("iding-password").textContent = data.iding.password_set ? "vyplněno" : "nevyplněno";
+    document.getElementById("admin").hidden = false;
+    document.getElementById("iding").hidden = false;
+  }
+
+  const saveButton = document.getElementById("save");
+  saveButton.addEventListener("click", async () => {
+    saveButton.disabled = true;
+    const phones = {};
+    for (const select of document.querySelectorAll("#users select")) phones[select.dataset.user] = select.value;
+    try {
+      await api("api/admin/phones", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(phones),
+      });
+      show("save-status", "ok", "Uloženo.");
+    } catch (err) {
+      show("save-status", "err", err.message);
+    } finally {
+      saveButton.disabled = false;
+    }
+  });
+
+  api("api/me")
+    .then((me) => { if (me.is_admin) return loadAdmin(); })
+    .catch((err) => show("notify-status", "err", err.message));
 </script>
 </body>
 </html>

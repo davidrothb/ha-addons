@@ -8,20 +8,27 @@ a tlačítkem pošle testovací oznámení na telefon.
 
 | Volba | Popis |
 | --- | --- |
-| `notify_service` | Notify služba telefonu, např. `notify.mobile_app_davids_iphone`. Seznam je v **Nástroje pro vývojáře → Akce** (hledej `notify.mobile_app`). Když je volba prázdná nebo špatná, stránka po stisku tlačítka vypíše dostupné telefony. |
-| `show_in_sidebar` | Zobrazí doplněk v postranním panelu jako „Snídaně“. Projeví se po restartu doplňku a přepíše ruční přepínač na kartě Informace. |
+| `iding_phone` | Telefonní číslo účtu na iding.tw. |
+| `iding_password` | Heslo k účtu na iding.tw. Kdo se přihlašuje jen přes LINE, musí si v účtu nastavit heslo. |
+
+Do postranního panelu se doplněk přidá přepínačem **Zobrazit v postranním panelu** na kartě Informace.
+
+### Uživatelé a telefony
 
 Uživatele doplněk pozná sám: Home Assistant mu přes Ingress předává, kdo je přihlášený.
+Administrátoři Home Assistantu vidí na stránce doplňku sekci **Telefony uživatelů**, kde každému
+uživateli vyberou jeho telefon z aplikace Companion. Na ten telefon pak chodí jeho oznámení.
 
 ## Lokální vývoj
 
 ```sh
-./run.sh                    # http://localhost:8099, uživatel David
+./run.sh                    # http://localhost:8099, uživatel David (admin)
 open "http://localhost:8099/?as=Jana"   # jiný uživatel
 ./run.sh --host 0.0.0.0     # přístup z telefonu na stejné wifi
 ```
 
-V dev režimu se oznámení jen vypíše do terminálu.
+V dev režimu jsou uživatelé (David – admin, Jana, Petr) i telefony vymyšlené, oznámení se jen
+vypíše do terminálu a přiřazení telefonů se ukládá do `dev_data/settings.json`.
 
 ## Test v Home Assistantu bez pushe
 

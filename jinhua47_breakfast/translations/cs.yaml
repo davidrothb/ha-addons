@@ -1,9 +1,9 @@
 configuration:
-  notify_service:
-    name: Telefon pro oznámení
+  iding_phone:
+    name: iding – telefon
+    description: Telefonní číslo, kterým se přihlašuješ na iding.tw (např. 0912345678).
+  iding_password:
+    name: iding – heslo
     description: >-
-      Notify služba telefonu z aplikace Home Assistant, např. notify.mobile_app_davids_iphone
-      (najdeš ji v Nástroje pro vývojáře → Akce, nebo ji doplněk vypíše po stisku tlačítka).
-  show_in_sidebar:
-    name: Zobrazit v postranním panelu
-    description: Přidá doplněk do hlavního panelu Home Assistantu jako položku „Snídaně“.
+      Heslo k účtu iding.tw. Pokud se přihlašuješ jen přes LINE, nastav si v účtu heslo.
+      Telefony uživatelů se přiřazují přímo na stránce doplňku (sekce pro administrátory).
