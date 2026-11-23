@@ -1,0 +1,9 @@
+configuration:
+  notify_service:
+    name: Telefon pro oznámení
+    description: >-
+      Notify služba telefonu z aplikace Home Assistant, např. notify.mobile_app_davids_iphone
+      (najdeš ji v Nástroje pro vývojáře → Akce, nebo ji doplněk vypíše po stisku tlačítka).
+  show_in_sidebar:
+    name: Zobrazit v postranním panelu
+    description: Přidá doplněk do hlavního panelu Home Assistantu jako položku „Snídaně“.

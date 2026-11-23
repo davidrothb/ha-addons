@@ -1,0 +1,22 @@
+name: Jinhua47 Snídaně
+version: "0.1.0"
+slug: jinhua47_breakfast
+description: Společná ranní objednávka snídaně z 金華47 (zatím testovací základ)
+url: https://github.com/davidrothb/ha-addons/tree/main/jinhua47_breakfast
+arch:
+  - aarch64
+  - amd64
+startup: application
+boot: auto
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:food-croissant
+panel_title: Snídaně
+homeassistant_api: true
+hassio_api: true
+options:
+  notify_service: ""
+  show_in_sidebar: true
+schema:
+  notify_service: str?
+  show_in_sidebar: bool

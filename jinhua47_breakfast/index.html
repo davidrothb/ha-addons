@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jinhua47 Snídaně</title>
+<style>
+  :root {
+    --bg: #f5f5f4; --card: #ffffff; --text: #1c1917; --muted: #78716c;
+    --accent: #c2410c; --accent-text: #ffffff; --ok: #15803d; --err: #b91c1c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111111; --card: #1c1c1c; --text: #f5f5f4; --muted: #a8a29e;
+      --accent: #f97316; --accent-text: #111111; --ok: #4ade80; --err: #f87171;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; align-items: center; justify-content: center; padding: 16px;
+  }
+  main {
+    width: 100%; max-width: 420px; background: var(--card); border-radius: 16px;
+    padding: 32px 24px; text-align: center; box-shadow: 0 1px 3px rgb(0 0 0 / .12);
+  }
+  h1 { margin: 0 0 8px; font-size: 28px; }
+  p { margin: 0 0 24px; color: var(--muted); }
+  button {
+    width: 100%; padding: 14px; border: 0; border-radius: 12px; cursor: pointer;
+    background: var(--accent); color: var(--accent-text); font: inherit; font-weight: 600;
+  }
+  button:disabled { opacity: .6; cursor: wait; }
+  #status { margin-top: 16px; min-height: 1.5em; font-size: 14px; }
+  #status.ok { color: var(--ok); }
+  #status.err { color: var(--err); }
+  #status code { font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Ahoj {{NAME}}</h1>
+  <p>Testovací základ doplňku Jinhua47 Snídaně.</p>
+  <button id="notify">Poslat testovací oznámení</button>
+  <div id="status" role="status"></div>
+</main>
+<script>
+  const button = document.getElementById("notify");
+  const status = document.getElementById("status");
+
+  function show(kind, text, available) {
+    status.className = kind;
+    status.textContent = text;
+    if (available && available.length) {
+      status.append(document.createElement("br"), "Dostupné telefony: ");
+      available.forEach((name, i) => {
+        const code = document.createElement("code");
+        code.textContent = "notify." + name;
+        status.append(i ? ", " : "", code);
+      });
+    }
+  }
+
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    show("", "Odesílám…");
+    try {
+      // Relative URL keeps the Ingress prefix; the query keeps ?as= in dev mode.
+      const response = await fetch("api/notify" + location.search, { method: "POST" });
+      const body = await response.json();
+      if (response.ok) show("ok", "Oznámení odesláno na " + body.service + ".");
+      else show("err", body.error, body.available);
+    } catch (err) {
+      show("err", "Doplněk neodpověděl: " + err.message);
+    } finally {
+      button.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

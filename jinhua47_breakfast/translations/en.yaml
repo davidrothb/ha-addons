@@ -1,0 +1,8 @@
+configuration:
+  notify_service:
+    name: Phone for notifications
+    description: >-
+      Notify service of a Home Assistant Companion phone, e.g. notify.mobile_app_davids_iphone.
+  show_in_sidebar:
+    name: Show in sidebar
+    description: Adds the add-on to the Home Assistant sidebar as "Snídaně".
