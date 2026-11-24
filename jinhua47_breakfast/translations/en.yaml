@@ -1,7 +1,6 @@
 configuration:
-  iding_phone:
-    name: iding phone number
-    description: Phone number used to log in to iding.tw.
-  iding_password:
-    name: iding password
-    description: Password of the iding.tw account. Users' phones are assigned on the add-on page.
+  admins:
+    name: Admins
+    description: >-
+      Home Assistant usernames who get the settings gear on the add-on page. Empty = all Home Assistant admins.
+      Everything else is configured on the add-on page.

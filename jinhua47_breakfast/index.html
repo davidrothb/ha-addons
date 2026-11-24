@@ -18,68 +18,137 @@
   * { box-sizing: border-box; }
   body {
     margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
-    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; padding: 16px;
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
-  .wrap { max-width: 480px; margin: 0 auto; display: grid; gap: 16px; }
+  header {
+    position: sticky; top: 0; z-index: 1; height: 56px; padding: 0 8px 0 16px;
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--card); border-bottom: 1px solid var(--line);
+  }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  .icon-button {
+    width: 44px; height: 44px; border: 0; border-radius: 50%; background: none; color: var(--text);
+    display: grid; place-items: center; cursor: pointer;
+  }
+  .icon-button:hover { background: var(--bg); }
+  .icon-button svg { width: 24px; height: 24px; fill: currentColor; }
+  main { max-width: 480px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
   section {
     background: var(--card); border-radius: 16px; padding: 24px;
     box-shadow: 0 1px 3px rgb(0 0 0 / .12);
   }
-  .hello { text-align: center; padding: 32px 24px; }
-  h1 { margin: 0 0 8px; font-size: 28px; }
-  h2 { margin: 0 0 16px; font-size: 18px; }
-  p { margin: 0 0 24px; color: var(--muted); }
-  button {
+  .hello { text-align: center; padding: 40px 24px; }
+  .hello h2 { margin: 0; font-size: 28px; }
+  .phrase { margin: 8px 0 0; font-size: 18px; color: var(--muted); }
+  h3 { margin: 0 0 8px; font-size: 18px; }
+  .hint { font-size: 13px; color: var(--muted); margin: 0 0 8px; }
+  button.primary {
     width: 100%; padding: 14px; border: 0; border-radius: 12px; cursor: pointer;
     background: var(--accent); color: var(--accent-text); font: inherit; font-weight: 600;
   }
-  button:disabled { opacity: .6; cursor: wait; }
-  .status { margin-top: 12px; min-height: 1.5em; font-size: 14px; }
-  .ok { color: var(--ok); }
-  .err { color: var(--err); }
-  .row {
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    padding: 10px 0; border-bottom: 1px solid var(--line);
-  }
-  .row:last-of-type { border-bottom: 0; }
-  .row span { min-width: 0; overflow-wrap: anywhere; }
-  .badge { font-size: 12px; color: var(--muted); margin-left: 6px; }
-  select {
-    flex: 0 1 220px; min-width: 0; padding: 8px; border-radius: 8px; font: inherit;
+  button.secondary {
+    padding: 8px 12px; border-radius: 8px; cursor: pointer; font: inherit; font-size: 14px;
     border: 1px solid var(--line); background: var(--bg); color: var(--text);
   }
-  dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; font-size: 15px; }
+  button:disabled { opacity: .6; cursor: wait; }
+  .status { min-height: 1.5em; font-size: 14px; }
+  .ok { color: var(--ok); }
+  .err { color: var(--err); }
+  .user { padding: 16px 0; border-bottom: 1px solid var(--line); display: grid; gap: 8px; }
+  .user:last-child { border-bottom: 0; }
+  .user-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .user-name { font-weight: 600; overflow-wrap: anywhere; min-width: 0; }
+  .badge { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 6px; }
+  .field { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+  .add-user { display: flex; gap: 8px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .add-user select { flex: 1; }
+  .user-actions { display: flex; gap: 8px; flex-shrink: 0; }
+  .missing { color: var(--err); font-weight: 400; font-size: 13px; }
+  .form { display: grid; gap: 12px; }
+  .form h3 { margin: 0; }
+  .actions { display: flex; gap: 8px; }
+  select, textarea, input {
+    width: 100%; padding: 8px; border-radius: 8px; font: inherit; font-size: 15px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text);
+  }
+  textarea { resize: vertical; min-height: 64px; }
+  .save-bar { display: grid; gap: 8px; }
+  dl { margin: 8px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; font-size: 15px; }
   dt { color: var(--muted); }
-  dd { margin: 0; }
-  .hint { font-size: 13px; color: var(--muted); margin: 12px 0 0; }
+  dd { margin: 0; overflow-wrap: anywhere; }
   [hidden] { display: none !important; }
 </style>
 </head>
 <body>
-<div class="wrap">
+<header>
+  <h1 id="title">Snídaně</h1>
+  <button id="settings-toggle" class="icon-button" hidden aria-label="Nastavení" title="Nastavení">
+    <svg id="icon-settings" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.14 12.94a7.07 7.07 0 0 0 .06-.94 7.07 7.07 0 0 0-.06-.94l2.03-1.58a.49.49 0 0 0 .12-.62l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54A.48.48 0 0 0 13.92 2h-3.84a.48.48 0 0 0-.48.41l-.36 2.54a7.03 7.03 0 0 0-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.72 8.47a.48.48 0 0 0 .12.62l2.03 1.58a7.4 7.4 0 0 0 0 1.88l-2.03 1.58a.49.49 0 0 0-.12.62l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.04.7 1.62.94l.36 2.54c.05.24.25.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54a7.03 7.03 0 0 0 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.48.48 0 0 0-.12-.62l-2.03-1.58ZM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2Z"/></svg>
+    <svg id="icon-close" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12Z"/></svg>
+  </button>
+</header>
+
+<main id="home">
   <section class="hello">
-    <h1>Ahoj {{NAME}}</h1>
-    <p>Testovací základ doplňku Jinhua47 Snídaně.</p>
-    <button id="notify">Poslat testovací oznámení</button>
-    <div id="notify-status" class="status" role="status"></div>
+    <h2>Ahoj {{NAME}}</h2>
+    <p class="phrase" {{PHRASE_HIDDEN}}>{{PHRASE}}</p>
   </section>
+  <section {{NOT_MEMBER_HIDDEN}}>
+    <p class="hint">Zatím nejsi mezi strávníky. Požádej správce, ať tě přidá.</p>
+  </section>
+</main>
 
-  <section id="admin" hidden>
-    <h2>Telefony uživatelů</h2>
+<main id="settings" hidden>
+  <section>
+    <h3>Strávníci</h3>
+    <p class="hint">Telefon, na který chodí oznámení, a přezdívky (jedna na řádek, každý den se vybere jedna).
+      Testovací oznámení jde na vybraný telefon i před uložením. Přidání a odebrání platí po uložení;
+      odebráním se smaže i telefon a přezdívky.</p>
     <div id="users"></div>
-    <button id="save" style="margin-top: 16px">Uložit</button>
+    <div class="add-user">
+      <select id="candidates" aria-label="Uživatel Home Assistantu k přidání"></select>
+      <button id="add-user" class="secondary">Přidat</button>
+    </div>
+  </section>
+  <section class="form">
+    <h3>Denní oznámení</h3>
+    <label class="field">Čas (prázdné = vypnuto)
+      <input id="daily-time" type="time">
+    </label>
+    <label class="field">Hlášky v oznámení (jedna na řádek): „Ahoj přezdívko, hláška“
+      <textarea id="notification-phrases" rows="4"></textarea>
+    </label>
+  </section>
+  <section class="form">
+    <h3>Hlavní stránka</h3>
+    <label class="field">Hlášky pod pozdravem (jedna na řádek)
+      <textarea id="page-phrases" rows="4"></textarea>
+    </label>
+  </section>
+  <section class="form">
+    <h3>Účet iding</h3>
+    <label class="field">Telefon
+      <input id="iding-phone" type="tel" autocomplete="off" placeholder="09xxxxxxxx">
+    </label>
+    <label class="field">Heslo
+      <input id="iding-password" type="password" autocomplete="new-password">
+    </label>
+    <div class="actions">
+      <button id="iding-test" class="secondary">Ověřit přihlášení</button>
+    </div>
+    <div id="iding-status" class="status" role="status"></div>
+  </section>
+  <div class="save-bar">
+    <button id="save" class="primary">Uložit</button>
     <div id="save-status" class="status" role="status"></div>
+  </div>
+  <section>
+    <h3>Správci</h3>
+    <p class="hint" id="admins-hint"></p>
+    <p class="hint">Správci se mění v Nastavení → Doplňky → Jinhua47 Snídaně → Konfigurace.</p>
   </section>
+</main>
 
-  <section id="iding" hidden>
-    <h2>Účet iding</h2>
-    <dl>
-      <dt>Telefon</dt><dd id="iding-phone"></dd>
-      <dt>Heslo</dt><dd id="iding-password"></dd>
-    </dl>
-    <p class="hint">Mění se v Nastavení → Doplňky → Jinhua47 Snídaně → Konfigurace.</p>
-  </section>
-</div>
 <script>
   // Relative URLs keep the Ingress prefix; the query keeps ?as= in dev mode.
   const api = (path, options) => fetch(path + location.search, options).then(async (response) => {
@@ -87,80 +156,229 @@
     if (!response.ok) throw new Error(body.error || "Chyba " + response.status);
     return body;
   });
+  const post = (path, body) => api(path, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
 
-  function show(id, kind, text) {
-    const el = document.getElementById(id);
+  function show(el, kind, text) {
     el.className = "status " + kind;
     el.textContent = text;
   }
 
-  const notifyButton = document.getElementById("notify");
-  notifyButton.addEventListener("click", async () => {
-    notifyButton.disabled = true;
-    show("notify-status", "", "Odesílám…");
-    try {
-      const body = await api("api/notify", { method: "POST" });
-      show("notify-status", "ok", "Oznámení odesláno na " + body.service + ".");
-    } catch (err) {
-      show("notify-status", "err", err.message);
-    } finally {
-      notifyButton.disabled = false;
+  // --- views: #settings in the URL keeps the back button working ---------
+  const toggle = document.getElementById("settings-toggle");
+  let settingsLoaded = false;
+
+  function render() {
+    const inSettings = location.hash === "#settings" && !toggle.hidden;
+    document.getElementById("home").hidden = inSettings;
+    document.getElementById("settings").hidden = !inSettings;
+    document.getElementById("icon-settings").hidden = inSettings;
+    document.getElementById("icon-close").hidden = !inSettings;
+    document.getElementById("title").textContent = inSettings ? "Nastavení" : "Snídaně";
+    toggle.setAttribute("aria-label", inSettings ? "Zavřít nastavení" : "Nastavení");
+    toggle.title = toggle.getAttribute("aria-label");
+    if (inSettings && !settingsLoaded) {
+      settingsLoaded = true;
+      loadSettings().catch((err) => {
+        settingsLoaded = false;
+        show(document.getElementById("save-status"), "err", err.message);
+      });
     }
+  }
+
+  toggle.addEventListener("click", () => {
+    if (location.hash === "#settings") history.back();
+    else location.hash = "settings";
+  });
+  window.addEventListener("hashchange", render);
+
+  // --- settings ----------------------------------------------------------
+  function field(label, input) {
+    const wrap = document.createElement("label");
+    wrap.className = "field";
+    wrap.append(label, input);
+    return wrap;
+  }
+
+  function userRow(user, phones) {
+    const row = document.createElement("div");
+    row.className = "user";
+    row.dataset.user = user.id;
+
+    const head = document.createElement("div");
+    head.className = "user-head";
+    const name = document.createElement("div");
+    name.className = "user-name";
+    name.textContent = user.name;
+    if (user.is_admin) {
+      const badge = document.createElement("span");
+      badge.className = "badge";
+      badge.textContent = "správce";
+      name.append(badge);
+    }
+    if (user.missing) {
+      const note = document.createElement("div");
+      note.className = "missing";
+      note.textContent = "Uživatel už v Home Assistantu není.";
+      name.append(note);
+    }
+    const test = document.createElement("button");
+    test.className = "secondary";
+    test.textContent = "Test";
+    test.title = "Poslat testovací oznámení";
+    test.disabled = !!user.missing;
+    const remove = document.createElement("button");
+    remove.className = "secondary";
+    remove.textContent = "Odebrat";
+    remove.addEventListener("click", () => {
+      row.remove();
+      if (!user.missing) addCandidate({ id: user.id, name: user.name });
+    });
+    const actions = document.createElement("div");
+    actions.className = "user-actions";
+    actions.append(test, remove);
+    head.append(name, actions);
+
+    const select = document.createElement("select");
+    select.append(new Option("— bez telefonu —", ""));
+    for (const phone of phones) select.append(new Option(phone.label, phone.service));
+    select.value = user.phone || "";
+
+    const nicknames = document.createElement("textarea");
+    nicknames.rows = 2;
+    nicknames.placeholder = "Bez přezdívky se použije jméno";
+    nicknames.value = (user.nicknames || []).join("\n");
+
+    const status = document.createElement("div");
+    status.className = "status";
+    status.setAttribute("role", "status");
+
+    test.addEventListener("click", async () => {
+      test.disabled = true;
+      show(status, "", "Odesílám…");
+      try {
+        const body = await post("api/admin/test_notify", { user_id: user.id, phone: select.value });
+        show(status, "ok", "Odesláno na " + body.service + ".");
+      } catch (err) {
+        show(status, "err", err.message);
+      } finally {
+        test.disabled = false;
+      }
+    });
+
+    row.append(head, field("Telefon", select), field("Přezdívky", nicknames), status);
+    return row;
+  }
+
+  // --- members: added and removed on the page, stored on Save --------------
+  const candidates = document.getElementById("candidates");
+  const addButton = document.getElementById("add-user");
+  let knownPhones = [];
+
+  function refreshCandidates() {
+    const empty = candidates.options.length === 0;
+    candidates.disabled = addButton.disabled = empty;
+    if (empty) candidates.append(new Option("Všichni uživatelé jsou přidaní", ""));
+  }
+
+  function addCandidate(user) {
+    if (candidates.disabled) candidates.replaceChildren();
+    const option = new Option(user.name, user.id);
+    const after = [...candidates.options].find((o) => o.text.localeCompare(user.name, "cs") > 0);
+    candidates.add(option, after || null);
+    refreshCandidates();
+  }
+
+  addButton.addEventListener("click", () => {
+    const option = candidates.selectedOptions[0];
+    if (!option || !option.value) return;
+    document.getElementById("users").append(
+      userRow({ id: option.value, name: option.text, nicknames: [] }, knownPhones),
+    );
+    option.remove();
+    refreshCandidates();
   });
 
-  async function loadAdmin() {
+  async function loadSettings() {
     const data = await api("api/admin");
-    const list = document.getElementById("users");
-    list.replaceChildren();
-    for (const user of data.users) {
-      const row = document.createElement("label");
-      row.className = "row";
-      const name = document.createElement("span");
-      name.textContent = user.name;
-      if (user.is_admin) {
-        const badge = document.createElement("span");
-        badge.className = "badge";
-        badge.textContent = "admin";
-        name.append(badge);
-      }
-      const select = document.createElement("select");
-      select.dataset.user = user.id;
-      select.append(new Option("— bez telefonu —", ""));
-      for (const phone of data.phones) select.append(new Option(phone.label, phone.service));
-      select.value = user.phone || "";
-      row.append(name, select);
-      list.append(row);
+    knownPhones = data.phones;
+    document.getElementById("users").replaceChildren(...data.members.map((u) => userRow(u, data.phones)));
+    candidates.replaceChildren(...data.candidates.map((u) => new Option(u.name, u.id)));
+    refreshCandidates();
+    if (!data.phones.length) {
+      show(document.getElementById("save-status"), "err", "Home Assistant nemá žádný telefon s aplikací Companion.");
     }
-    if (!data.phones.length) show("save-status", "err", "Home Assistant nemá žádný telefon s aplikací Companion.");
-
-    document.getElementById("iding-phone").textContent = data.iding.phone || "nevyplněno";
-    document.getElementById("iding-password").textContent = data.iding.password_set ? "vyplněno" : "nevyplněno";
-    document.getElementById("admin").hidden = false;
-    document.getElementById("iding").hidden = false;
+    document.getElementById("daily-time").value = data.daily_notification_time || "";
+    document.getElementById("notification-phrases").value = data.notification_phrases.join("\n");
+    document.getElementById("page-phrases").value = data.page_phrases.join("\n");
+    document.getElementById("iding-phone").value = data.iding.phone;
+    setPasswordPlaceholder(data.iding.password_set);
+    const admins = data.admins.join(", ") || "nikdo";
+    document.getElementById("admins-hint").textContent = data.admins_from_option
+      ? "Podle volby admins: " + admins + "."
+      : "Volba admins je prázdná, takže správci jsou všichni administrátoři Home Assistantu: " + admins + ".";
   }
+
+  const lines = (text) => text.split("\n").map((n) => n.trim()).filter(Boolean);
+  const passwordInput = document.getElementById("iding-password");
+
+  function setPasswordPlaceholder(isSet) {
+    passwordInput.value = "";
+    passwordInput.placeholder = isSet ? "uloženo – vyplň jen pro změnu" : "nevyplněno";
+  }
+
+  const testButton = document.getElementById("iding-test");
+  testButton.addEventListener("click", async () => {
+    testButton.disabled = true;
+    const status = document.getElementById("iding-status");
+    show(status, "", "Přihlašuji se do idingu…");
+    try {
+      const body = await post("api/admin/iding_test", {
+        phone: document.getElementById("iding-phone").value,
+        password: passwordInput.value,
+      });
+      show(status, "ok", "Přihlášení funguje (" + body.name + "). Nezapomeň uložit.");
+    } catch (err) {
+      show(status, "err", err.message);
+    } finally {
+      testButton.disabled = false;
+    }
+  });
 
   const saveButton = document.getElementById("save");
   saveButton.addEventListener("click", async () => {
     saveButton.disabled = true;
-    const phones = {};
-    for (const select of document.querySelectorAll("#users select")) phones[select.dataset.user] = select.value;
+    const status = document.getElementById("save-status");
+    const users = {};
+    for (const row of document.querySelectorAll("#users .user")) {
+      users[row.dataset.user] = {
+        phone: row.querySelector("select").value,
+        nicknames: lines(row.querySelector("textarea").value),
+      };
+    }
     try {
-      await api("api/admin/phones", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(phones),
+      const body = await post("api/admin/settings", {
+        users,
+        daily_notification_time: document.getElementById("daily-time").value,
+        notification_phrases: lines(document.getElementById("notification-phrases").value),
+        page_phrases: lines(document.getElementById("page-phrases").value),
+        iding: { phone: document.getElementById("iding-phone").value, password: passwordInput.value },
       });
-      show("save-status", "ok", "Uloženo.");
+      setPasswordPlaceholder(body.password_set);
+      show(status, "ok", "Uloženo.");
     } catch (err) {
-      show("save-status", "err", err.message);
+      show(status, "err", err.message);
     } finally {
       saveButton.disabled = false;
     }
   });
 
+  // --- start -------------------------------------------------------------
   api("api/me")
-    .then((me) => { if (me.is_admin) return loadAdmin(); })
-    .catch((err) => show("notify-status", "err", err.message));
+    .then((me) => { toggle.hidden = !me.is_admin; })
+    .catch(() => {})
+    .finally(render);
 </script>
 </body>
 </html>

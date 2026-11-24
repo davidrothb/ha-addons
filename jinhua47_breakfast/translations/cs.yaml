@@ -1,9 +1,7 @@
 configuration:
-  iding_phone:
-    name: iding – telefon
-    description: Telefonní číslo, kterým se přihlašuješ na iding.tw (např. 0912345678).
-  iding_password:
-    name: iding – heslo
+  admins:
+    name: Správci
     description: >-
-      Heslo k účtu iding.tw. Pokud se přihlašuješ jen přes LINE, nastav si v účtu heslo.
-      Telefony uživatelů se přiřazují přímo na stránce doplňku (sekce pro administrátory).
+      Uživatelská jména (přihlašovací jméno v Home Assistantu) těch, kdo uvidí ozubené kolečko
+      s nastavením na stránce doplňku. Prázdné = všichni administrátoři Home Assistantu.
+      Všechno ostatní (účet iding, telefony, přezdívky, hlášky, čas oznámení) se nastavuje tam.

@@ -6,18 +6,31 @@ a tlačítkem pošle testovací oznámení na telefon.
 
 ## Nastavení
 
+V konfiguraci doplňku je jediná volba:
+
 | Volba | Popis |
 | --- | --- |
-| `iding_phone` | Telefonní číslo účtu na iding.tw. |
-| `iding_password` | Heslo k účtu na iding.tw. Kdo se přihlašuje jen přes LINE, musí si v účtu nastavit heslo. |
+| `admins` | Uživatelská jména správců doplňku (přihlašovací jméno v HA, funguje i zobrazované jméno). Prázdné = všichni administrátoři HA. Jméno, které neodpovídá žádnému uživateli, doplněk vypíše do logu. |
 
 Do postranního panelu se doplněk přidá přepínačem **Zobrazit v postranním panelu** na kartě Informace.
 
-### Uživatelé a telefony
+### Nastavení na stránce doplňku
 
-Uživatele doplněk pozná sám: Home Assistant mu přes Ingress předává, kdo je přihlášený.
-Administrátoři Home Assistantu vidí na stránce doplňku sekci **Telefony uživatelů**, kde každému
-uživateli vyberou jeho telefon z aplikace Companion. Na ten telefon pak chodí jeho oznámení.
+Uživatele doplněk pozná sám: Home Assistant mu přes Ingress předává ID a jméno přihlášeného uživatele.
+Správci vidí v horní liště ozubené kolečko a pod ním nastavují:
+
+- **Strávníci:** kdo se objednávek účastní. Přidávají se výběrem z uživatelů HA a ukládají se podle
+  ID uživatele HA, ne podle jména, takže přejmenování propojení nerozbije. U každého telefon z aplikace
+  Companion, seznam přezdívek (jedna na řádek, každý den se vybere jedna; bez přezdívky se použije
+  jméno z HA) a tlačítko pro testovací oznámení. Odebráním se smaže i jeho telefon a přezdívky.
+  Smazaný uživatel HA zůstane v seznamu označený, dokud ho správce neodebere.
+- **Denní oznámení:** čas (prázdné = vypnuto) a hlášky. Každý s přiřazeným telefonem dostane každý den
+  `Ahoj <přezdívka>, <hláška>`. Po restartu se oznámení pošle, jen pokud od nastaveného času
+  neuběhla víc než hodina.
+- **Hlavní stránka:** hlášky pod pozdravem, každý den jiná pro každého.
+- **Účet iding:** telefon a heslo, tlačítko **Ověřit přihlášení**. Kdo se přihlašuje jen přes LINE,
+  musí si v účtu nastavit heslo. Heslo se uloží do `/data/settings.json` doplňku (je i v zálohách HA)
+  a stránka ho už nikdy nezobrazí.
 
 ## Lokální vývoj
 
