@@ -12,7 +12,7 @@ Vlastní add-ony pro Home Assistant.
 
 | Add-on | Popis |
 | --- | --- |
-| [Jinhua47 Snídaně](jinhua47_breakfast/) | Společná ranní objednávka snídaně z 金華47 (zatím testovací základ: pozdrav a testovací oznámení). |
+| [Jinhua47 Snídaně](jinhua47_breakfast/) | Společná ranní objednávka snídaně z 金華47 (výběr setu s pitím, schválení správcem, objednávka na idingu a platba přes LINE Pay). |
 | [WSJJSC Tracker](wsjjsc_tracker/) | Obsazenost posilovny Taipei Zhongzheng Sports Center jako senzory v HA, CSV historie a denní graf. |
 
 ## Nový add-on

@@ -20,10 +20,28 @@
     margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
     font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
+  .topbar { position: sticky; top: 0; z-index: 1; }
   header {
-    position: sticky; top: 0; z-index: 1; height: 56px; padding: 0 8px 0 16px;
+    height: 56px; padding: 0 8px 0 16px;
     display: flex; align-items: center; justify-content: space-between;
     background: var(--card); border-bottom: 1px solid var(--line);
+  }
+  /* Ticker: two identical copies side by side, moved by half the track for a seamless loop. */
+  .ticker {
+    overflow: hidden; height: 36px; display: flex; align-items: center;
+    background: var(--bg); border-bottom: 1px solid var(--line); font-size: 14px;
+  }
+  .ticker-track { display: flex; width: max-content; animation: ticker var(--ticker-duration, 30s) linear infinite; }
+  .ticker-copy { display: flex; }
+  .ticker-item { white-space: nowrap; padding: 0 24px; }
+  .ticker-item b { font-weight: 600; }
+  .ticker-item.pending { color: var(--muted); }
+  /* right to left; for left to right swap the two values */
+  @keyframes ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  @media (prefers-reduced-motion: reduce) {
+    .ticker { overflow-x: auto; }
+    .ticker-track { animation: none; }
+    .ticker-copy + .ticker-copy { display: none; }
   }
   header h1 { margin: 0; font-size: 18px; font-weight: 600; }
   .icon-button {
@@ -32,7 +50,7 @@
   }
   .icon-button:hover { background: var(--bg); }
   .icon-button svg { width: 24px; height: 24px; fill: currentColor; }
-  main { max-width: 480px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+  main { max-width: 480px; margin: 0 auto; padding: 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
   section {
     background: var(--card); border-radius: 16px; padding: 24px;
     box-shadow: 0 1px 3px rgb(0 0 0 / .12);
@@ -50,6 +68,16 @@
     padding: 8px 12px; border-radius: 8px; cursor: pointer; font: inherit; font-size: 14px;
     border: 1px solid var(--line); background: var(--bg); color: var(--text);
   }
+  a.button {
+    display: block; text-align: center; text-decoration: none; box-sizing: border-box;
+  }
+  a.button.primary {
+    padding: 14px; border-radius: 12px; background: var(--accent); color: var(--accent-text); font-weight: 600;
+  }
+  a.button.secondary {
+    padding: 10px 12px; border-radius: 8px; font-size: 14px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text);
+  }
   button:disabled { opacity: .6; cursor: wait; }
   .status { min-height: 1.5em; font-size: 14px; }
   .ok { color: var(--ok); }
@@ -64,7 +92,7 @@
   .add-user select { flex: 1; }
   .user-actions { display: flex; gap: 8px; flex-shrink: 0; }
   .missing { color: var(--err); font-weight: 400; font-size: 13px; }
-  .form { display: grid; gap: 12px; }
+  .form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .form h3 { margin: 0; }
   .actions { display: flex; gap: 8px; }
   select, textarea, input {
@@ -72,14 +100,57 @@
     border: 1px solid var(--line); background: var(--bg); color: var(--text);
   }
   textarea { resize: vertical; min-height: 64px; }
+  .check { display: flex; align-items: flex-start; gap: 10px; font-size: 15px; cursor: pointer; }
+  .check input { width: 20px; height: 20px; margin: 2px 0 0; flex-shrink: 0; accent-color: var(--accent); }
+  .form .check + .hint { margin: 0; }
   .save-bar { display: grid; gap: 8px; }
   dl { margin: 8px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; font-size: 15px; }
   dt { color: var(--muted); }
   dd { margin: 0; overflow-wrap: anywhere; }
+  .steps { display: grid; gap: 16px; }
+  .steps section, #admin-order { padding: 20px 16px; scroll-margin-top: 108px; }
+  .choices { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .group-title { margin: 12px 0 8px; font-size: 14px; font-weight: 600; color: var(--muted); }
+  #previous-group .group-title:first-child,
+  #previous-group[hidden] + #favorite-sets-group .group-title:first-child { margin-top: 0; }
+  .choices.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .choice {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    min-height: 52px; padding: 10px 12px; border-radius: 12px; cursor: pointer;
+    border: 2px solid var(--line); background: var(--bg);
+  }
+  .choice { position: relative; }
+  .choice input { position: absolute; top: 0; left: 0; width: 1px; height: 1px; margin: 0; opacity: 0; pointer-events: none; }
+  .choice:has(input:checked) { border-color: var(--accent); }
+  .choice:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .choice:has(input:disabled) { opacity: .45; cursor: not-allowed; }
+  .choice-name { font-weight: 600; overflow-wrap: anywhere; }
+  .choice-sub { font-size: 13px; color: var(--muted); }
+  .choice-price { font-size: 14px; color: var(--muted); white-space: nowrap; }
+  .summary { display: grid; gap: 12px; }
+  .summary-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .summary .hint { margin: 4px 0 0; }
+  .total { font-size: 22px; font-weight: 700; white-space: nowrap; }
+  .notice { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--bg); font-size: 15px; }
+  .notice.warn { color: var(--err); }
+  .overview { display: grid; gap: 6px; font-size: 15px; }
+  .overview + .overview { padding-top: 12px; border-top: 1px solid var(--line); }
+  .overview-row { display: flex; justify-content: space-between; gap: 12px; }
+  .overview-row .muted { color: var(--muted); }
+  .overview-row > :last-child { white-space: nowrap; }
+  /* Member rows: short name left, long choice right; the choice wraps. */
+  #order-members .overview-row > :first-child { white-space: nowrap; }
+  #order-members .overview-row > :last-child { white-space: normal; text-align: right; }
+  .test-banner {
+    padding: 6px 16px; text-align: center; font-weight: 700; font-size: 14px; letter-spacing: .04em;
+    text-transform: uppercase; color: #fff; background: #dc2626;
+  }
   [hidden] { display: none !important; }
 </style>
 </head>
 <body>
+<div class="topbar">
+<div id="test-banner" class="test-banner" {{TEST_BANNER_HIDDEN}}>Testovací režim</div>
 <header>
   <h1 id="title">Snídaně</h1>
   <button id="settings-toggle" class="icon-button" hidden aria-label="Nastavení" title="Nastavení">
@@ -87,15 +158,111 @@
     <svg id="icon-close" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12Z"/></svg>
   </button>
 </header>
+<div id="ticker" class="ticker" hidden>
+  <div id="ticker-track" class="ticker-track"></div>
+</div>
+</div>
 
-<main id="home">
-  <section class="hello">
+<main id="home" data-view="{{VIEW}}">
+  <section id="test-note" class="hello" {{TEST_HIDDEN}}>
+    <h2>Testovací režim</h2>
+    <p class="phrase">Správce doplněk zrovna zkouší. Až skončí, objeví se tu zase objednávání.</p>
+  </section>
+  <section id="closed-note" class="hello" {{CLOSED_HIDDEN}}>
+    <h2>Objednávky zatím nejsou otevřené</h2>
+    <p class="phrase">Až je správce otevře, objeví se tu výběr snídaně.</p>
+  </section>
+  <section class="hello" {{VISIBLE_HIDDEN}}>
     <h2>Ahoj {{NAME}}</h2>
     <p class="phrase" {{PHRASE_HIDDEN}}>{{PHRASE}}</p>
+  </section>
+  <section id="admin-order" class="form" hidden>
+    <h3>Dnešní objednávka</h3>
+    <div id="open-ordering" class="form" hidden>
+      <p class="notice">Objednávání je zavřené. Ostatní teď vidí jen hlášku, že objednávky nejsou otevřené:
+        bez přezdívky, hlášek, lišty i výběru.</p>
+      <button id="open-button" class="primary">Zahájit objednávání</button>
+    </div>
+    <div id="opened-row" class="summary-row" hidden>
+      <p id="opened-note" class="hint"></p>
+      <button id="close-button" class="secondary">Uzavřít objednávání</button>
+    </div>
+    <div id="order-members" class="overview"></div>
+    <div id="order-groups" class="overview"></div>
+    <div class="summary-row">
+      <span>Celkem</span>
+      <span id="order-total" class="total"></span>
+    </div>
+    <p id="order-approved" class="notice" hidden></p>
+    <div id="order-form" class="form" hidden>
+      <label class="field">Vyzvednutí
+        <select id="pickup-time"></select>
+      </label>
+      <button id="place-order" class="primary">Objednat a zaplatit</button>
+      <p class="hint">Objednávka je závazná. Pak ti na telefon přijde odkaz na platbu v LINE Pay.</p>
+    </div>
+    <div id="payment" class="form" hidden>
+      <p id="payment-text" class="notice"></p>
+      <a id="pay-app" class="button primary" target="_blank" rel="noopener">Zaplatit v LINE</a>
+      <a id="pay-web" class="button secondary" target="_blank" rel="noopener">Platba v prohlížeči</a>
+      <button id="confirm-payment" class="primary">Zaplatil jsem – dokončit</button>
+      <div class="actions">
+        <button id="pay-again" class="secondary">Nový odkaz na platbu</button>
+        <button id="cancel-order" class="secondary">Zrušit objednávku</button>
+      </div>
+    </div>
+    <p id="order-state" class="notice" hidden></p>
+    <button id="approve" class="primary">Schválit a poslat do košíku</button>
+    <button id="unlock" class="secondary" hidden>Znovu otevřít výběr</button>
+    <p id="approve-hint" class="hint">Schválení zamkne výběry a přepíše košík na účtu iding. Nic se neobjedná ani nezaplatí.</p>
+    <div id="approve-status" class="status" role="status"></div>
   </section>
   <section {{NOT_MEMBER_HIDDEN}}>
     <p class="hint">Zatím nejsi mezi strávníky. Požádej správce, ať tě přidá.</p>
   </section>
+  <div id="order" class="steps" {{MEMBER_HIDDEN}}>
+    <section id="locked-note" hidden>
+      <p class="notice">🔒 Správce objednávku uzavřel a poslal do košíku, výběr už nejde změnit.</p>
+    </section>
+    <section>
+      <h3>Set</h3>
+      <div id="previous-group" hidden>
+        <h4 class="group-title" id="previous-title">↩️ Jako včera</h4>
+        <div id="previous-choice" class="choices" role="radiogroup" aria-label="Jako minule"></div>
+      </div>
+      <div id="favorite-sets-group" hidden>
+        <h4 class="group-title">⭐ Oblíbené</h4>
+        <div id="favorite-sets" class="choices" role="radiogroup" aria-label="Oblíbené sety"></div>
+        <h4 class="group-title">Ostatní</h4>
+      </div>
+      <div id="sets" class="choices" role="radiogroup" aria-label="Set"></div>
+      <div id="menu-status" class="status" role="status">Načítám menu…</div>
+    </section>
+    <section id="drink-step" hidden>
+      <h3>Pití</h3>
+      <div id="drinks" class="choices two" role="radiogroup" aria-label="Pití"></div>
+    </section>
+    <section id="temp-step" hidden>
+      <h3>Teplota</h3>
+      <div id="temps" class="choices two" role="radiogroup" aria-label="Teplota"></div>
+    </section>
+    <section id="size-step" hidden>
+      <h3>Velikost</h3>
+      <div id="sizes" class="choices two" role="radiogroup" aria-label="Velikost"></div>
+    </section>
+    <section id="summary" class="summary" hidden>
+      <div class="summary-row">
+        <div>
+          <div id="summary-text"></div>
+          <p id="summary-hint" class="hint">Do košíku na idingu to pošle správce, až objednávku schválí.</p>
+        </div>
+        <div id="summary-price" class="total"></div>
+      </div>
+      <button id="save-choice" class="primary">Vybrat</button>
+      <button id="restart-choice" class="secondary" hidden>Začít znovu</button>
+      <div id="choice-status" class="status" role="status"></div>
+    </section>
+  </div>
 </main>
 
 <main id="settings" hidden>
@@ -120,9 +287,39 @@
     </label>
   </section>
   <section class="form">
+    <h3>Testovací režim</h3>
+    <label class="check">
+      <input id="test-mode" type="checkbox">
+      Zapnout testovací režim
+    </label>
+    <p class="hint">Ostatní neuvidí nic, jen hlášku „Testovací režim“, a nemůžou vybírat. Denní oznámení
+      dostanou jen správci. Správci vidí všechno a nahoře červený pruh. Platí po uložení.</p>
+  </section>
+  <section class="form">
+    <h3>Oznámení správci</h3>
+    <label class="check">
+      <input id="notify-admin-ready" type="checkbox">
+      Upozornit správce, když už mají ostatní vybráno a čeká se na něj
+    </label>
+    <p class="hint">Přijde jednou, když chybí už jen správcův výběr („chybíš jen ty“), a jednou, když mají
+      vybráno všichni a čeká se na schválení. Správce musí být mezi strávníky a mít přiřazený telefon.</p>
+  </section>
+  <section class="form">
     <h3>Hlavní stránka</h3>
     <label class="field">Hlášky pod pozdravem (jedna na řádek)
       <textarea id="page-phrases" rows="4"></textarea>
+    </label>
+  </section>
+  <section class="form">
+    <h3>Lišta nahoře</h3>
+    <p class="hint">Běží nahoře a vidí ji všichni: u každého strávníka emoji, jméno a hláška podle toho,
+      jestli už má vybráno. Každý den má každý jinou než včera a žádní dva stejnou; to jde jen,
+      když je hlášek v seznamu aspoň tolik jako strávníků.</p>
+    <label class="field">Hlášky, když má vybráno (jedna na řádek)
+      <textarea id="ticker-chosen-phrases" rows="3"></textarea>
+    </label>
+    <label class="field">Hlášky, když ještě nemá vybráno (jedna na řádek)
+      <textarea id="ticker-pending-phrases" rows="3"></textarea>
     </label>
   </section>
   <section class="form">
@@ -312,6 +509,10 @@
     document.getElementById("daily-time").value = data.daily_notification_time || "";
     document.getElementById("notification-phrases").value = data.notification_phrases.join("\n");
     document.getElementById("page-phrases").value = data.page_phrases.join("\n");
+    document.getElementById("ticker-chosen-phrases").value = data.ticker_chosen_phrases.join("\n");
+    document.getElementById("ticker-pending-phrases").value = data.ticker_pending_phrases.join("\n");
+    document.getElementById("notify-admin-ready").checked = data.notify_admin_ready;
+    document.getElementById("test-mode").checked = data.test_mode;
     document.getElementById("iding-phone").value = data.iding.phone;
     setPasswordPlaceholder(data.iding.password_set);
     const admins = data.admins.join(", ") || "nikdo";
@@ -363,10 +564,15 @@
         daily_notification_time: document.getElementById("daily-time").value,
         notification_phrases: lines(document.getElementById("notification-phrases").value),
         page_phrases: lines(document.getElementById("page-phrases").value),
+        ticker_chosen_phrases: lines(document.getElementById("ticker-chosen-phrases").value),
+        ticker_pending_phrases: lines(document.getElementById("ticker-pending-phrases").value),
+        notify_admin_ready: document.getElementById("notify-admin-ready").checked,
+        test_mode: document.getElementById("test-mode").checked,
         iding: { phone: document.getElementById("iding-phone").value, password: passwordInput.value },
       });
       setPasswordPlaceholder(body.password_set);
       show(status, "ok", "Uloženo.");
+      loadStatus(); // the test mode banner follows the saved setting
     } catch (err) {
       show(status, "err", err.message);
     } finally {
@@ -374,9 +580,439 @@
     }
   });
 
+  // --- order: set → drink → temperature → size (stays on the page for now) ---
+  const order = { set: null, drink: null, temp: null, size: null };
+  let menu = null;
+  const money = (n) => n + " NT$";
+  const plus = (n) => (n ? "+" + n : "");
+
+  // A radio group of cards; options: [{value, name, sub, price, disabled}].
+  function choices(container, group, options, selected, onPick) {
+    container.replaceChildren(...options.map((o) => {
+      const label = document.createElement("label");
+      label.className = "choice";
+      const input = document.createElement("input");
+      input.type = "radio";
+      input.name = group;
+      input.value = o.value;
+      input.disabled = !!o.disabled || locked;
+      input.checked = o.value === selected;
+      input.addEventListener("change", () => onPick(o.value));
+      const text = document.createElement("div");
+      const name = document.createElement("div");
+      name.className = "choice-name";
+      name.textContent = o.name;
+      text.append(name);
+      if (o.sub) {
+        const sub = document.createElement("div");
+        sub.className = "choice-sub";
+        sub.textContent = o.sub;
+        text.append(sub);
+      }
+      const price = document.createElement("div");
+      price.className = "choice-price";
+      price.textContent = o.price || "";
+      label.append(input, text, price);
+      return label;
+    }));
+  }
+
+  function reveal(id) {
+    const step = document.getElementById(id);
+    step.hidden = false;
+    // Always, also when changing an earlier pick: the next step is what comes next.
+    step.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  const currentSet = () => menu.sets.find((s) => s.index === order.set);
+  const currentDrink = () => menu.drinks.find((d) => d.index === order.drink);
+
+  function renderOrder() {
+    const set = currentSet();
+    const drink = currentDrink();
+    const setCard = (s) => ({
+      value: s.index, name: s.label, price: money(s.price),
+      sub: s.sold_out ? "vyprodáno" : s.contents, disabled: s.sold_out,
+    });
+    const pickSet = (v) => { order.set = v; update(); reveal("drink-step"); };
+    // The member's last pick from an earlier day, in one tap (still needs "Vybrat").
+    document.getElementById("previous-group").hidden = !previousChoice;
+    if (previousChoice) {
+      const p = previousChoice;
+      document.getElementById("previous-title").textContent = "↩️ " + p.title;
+      choices(document.getElementById("previous-choice"), "previous", [{
+        value: "previous", name: p.set, price: money(p.price),
+        sub: p.error ? "Dnes nejde: " + p.error : p.drink, disabled: !!p.error,
+      }], choiceKey(order) === choiceKey(p.choice) ? "previous" : null, () => {
+        Object.assign(order, p.choice); update(); reveal("summary");
+      });
+    }
+    const favorites = menu.sets.filter((s) => s.favorite);
+    document.getElementById("favorite-sets-group").hidden = !favorites.length;
+    choices(document.getElementById("favorite-sets"), "set", favorites.map(setCard), order.set, pickSet);
+    choices(document.getElementById("sets"), "set", menu.sets.filter((s) => !s.favorite).map(setCard), order.set, pickSet);
+
+    document.getElementById("drink-step").hidden = !set;
+    if (set) {
+      choices(document.getElementById("drinks"), "drink",
+        menu.drinks.filter((d) => set.drinks.includes(d.index)).map((d) => ({
+          value: d.index, name: d.label, price: plus(d.extra),
+          sub: d.sold_out ? "vyprodáno" : d.contents, disabled: d.sold_out,
+        })), order.drink, (v) => { order.drink = v; update(); reveal("temp-step"); });
+    }
+
+    document.getElementById("temp-step").hidden = !drink;
+    if (drink) {
+      choices(document.getElementById("temps"), "temp", [
+        { value: "iced", name: "Studené", sub: "s ledem" },
+        { value: "hot", name: "Teplé", sub: drink.hot ? "teplé, ne horké" : "jen studené", disabled: !drink.hot },
+      ], order.temp, (v) => { order.temp = v; update(); reveal("size-step"); });
+    }
+
+    document.getElementById("size-step").hidden = !(drink && order.temp);
+    if (drink && order.temp) {
+      choices(document.getElementById("sizes"), "size", [
+        { value: "small", name: "Malé", price: plus(drink.sizes.small?.price), disabled: !drink.sizes.small },
+        { value: "large", name: "Velké", price: plus(drink.sizes.large?.price), disabled: !drink.sizes.large },
+      ], order.size, (v) => { order.size = v; update(); reveal("summary"); });
+    }
+
+    const done = set && drink && order.temp && order.size;
+    document.getElementById("summary").hidden = !done;
+    if (done) {
+      const size = drink.sizes[order.size];
+      document.getElementById("summary-text").textContent = set.label + " + " + drink.label + ", "
+        + (order.temp === "hot" ? "teplé" : "studené") + ", " + (order.size === "large" ? "velké" : "malé");
+      document.getElementById("summary-price").textContent = money(set.price + drink.extra + (size?.price || 0));
+      const saved = savedChoice && choiceKey(savedChoice) === choiceKey(order);
+      saveChoiceButton.disabled = saved;
+      saveChoiceButton.hidden = locked;
+      document.getElementById("summary-hint").textContent = locked
+        ? "Schváleno správcem, je v košíku na idingu."
+        : "Do košíku na idingu to pošle správce, až objednávku schválí.";
+      saveChoiceButton.textContent = saved ? "Vybráno ✓" : savedChoice ? "Uložit změnu" : "Vybrat";
+    }
+    document.getElementById("locked-note").hidden = !locked;
+    restartButton.hidden = !savedChoice || locked;
+  }
+
+  // --- saved choice: the ticker shows who has chosen ----------------------
+  let savedChoice = null;
+  let previousChoice = null; // {choice, title, set, drink, price, error} from an earlier day
+  let locked = false; // the admin approved today's order
+  const choiceKey = (c) => [c.set, c.drink, c.temp, c.size].join("|");
+  const saveChoiceButton = document.getElementById("save-choice");
+  const restartButton = document.getElementById("restart-choice");
+  const choiceStatus = document.getElementById("choice-status");
+
+  saveChoiceButton.addEventListener("click", async () => {
+    saveChoiceButton.disabled = true;
+    show(choiceStatus, "", "");
+    try {
+      applyStatus(await post("api/choice", { ...order }));
+      loadOrder();
+    } catch (err) {
+      show(choiceStatus, "err", err.message);
+    }
+    renderOrder();
+  });
+
+  // Drop the saved choice and start again from the set.
+  restartButton.addEventListener("click", async () => {
+    restartButton.disabled = true;
+    show(choiceStatus, "", "");
+    try {
+      applyStatus(await post("api/choice", { clear: true }));
+      loadOrder();
+      Object.assign(order, { set: null, drink: null, temp: null, size: null });
+      renderOrder();
+      document.getElementById("order").scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (err) {
+      show(choiceStatus, "err", err.message);
+    } finally {
+      restartButton.disabled = false;
+    }
+  });
+
+  // Ticker, own saved choice and the lock, from /api/status or a choice change.
+  function applyStatus(data) {
+    // The admin opened (or midnight closed) ordering since the page loaded: load it again,
+    // the page itself differs (nickname, phrase, menu).
+    if (data.view && data.view !== document.getElementById("home").dataset.view) {
+      location.reload();
+      return;
+    }
+    if (data.test_mode !== undefined) document.getElementById("test-banner").hidden = !data.test_mode;
+    const lockChanged = data.locked !== locked;
+    locked = data.locked;
+    // First entry of the ticker: how far today's order got (visible to everyone).
+    const stages = {
+      ordered: ["🧾", "se platí."],
+      awaiting_payment: ["🧾", "se platí."],
+      paid: ["✅", "je zaplacená, vyzvednutí v " + data.pickup + "."],
+      ready: ["🍳", "je připravená k vyzvednutí."],
+      closed: ["✅", "je vyřízená."],
+    };
+    const [emoji, phrase] = stages[data.stage] || ["🔒", "je uzavřená."];
+    const lockEntry = { emoji, name: "Objednávka", phrase, chosen: true };
+    renderTicker(locked ? [lockEntry, ...data.ticker] : data.ticker);
+    previousChoice = data.previous || null;
+    const mineChanged = choiceKey(data.mine || {}) !== choiceKey(savedChoice || {});
+    savedChoice = data.mine;
+    // Another device (or the admin's lock) changed things: show the saved state.
+    if (menu && (lockChanged || mineChanged) && (locked || savedChoice)) {
+      Object.assign(order, savedChoice || { set: null, drink: null, temp: null, size: null });
+      update();
+    } else if (menu) {
+      renderOrder();
+    }
+  }
+
+  // --- admin: today's order, approval ---------------------------------------
+  let isAdmin = false;
+  const adminOrder = document.getElementById("admin-order");
+  const approveButton = document.getElementById("approve");
+  const unlockButton = document.getElementById("unlock");
+  const approveStatus = document.getElementById("approve-status");
+
+  function overviewRow(left, right, muted) {
+    const row = document.createElement("div");
+    row.className = "overview-row";
+    const a = document.createElement("span");
+    a.textContent = left;
+    const b = document.createElement("span");
+    b.textContent = right;
+    if (muted) b.className = "muted";
+    row.append(a, b);
+    return row;
+  }
+
+  function renderAdminOrder(data) {
+    adminOrder.hidden = false;
+    document.getElementById("order-members").replaceChildren(...data.members.map((m) =>
+      overviewRow(m.name, m.choice ? m.choice.text : "nevybráno", !m.choice)));
+    const groups = document.getElementById("order-groups");
+    groups.hidden = !data.groups.length;
+    groups.replaceChildren(...data.groups.map((g) =>
+      overviewRow(g.quantity + "× " + g.text, money(g.price * g.quantity))));
+    document.getElementById("order-total").textContent = money(data.total);
+    const approved = data.approved;
+    const note = document.getElementById("order-approved");
+    note.hidden = !approved;
+    if (approved) {
+      let text = "🔒 Schválil " + approved.by + " v " + approved.at + ": " + approved.items
+        + " ks v košíku na idingu za " + money(approved.our_total) + ".";
+      if (approved.iding_total !== null) text += " iding potvrdil " + money(approved.iding_total) + ".";
+      if (approved.warning) text += " ⚠️ " + approved.warning;
+      note.textContent = text;
+      note.className = "notice" + (approved.warning ? " warn" : "");
+    }
+    const order = data.order;
+    const stage = order ? order.stage : null;
+    // Ordering not started yet: only the button to start it (the overview is still shown).
+    const closed = !data.opened;
+    document.getElementById("open-ordering").hidden = !closed;
+    const openedNote = document.getElementById("opened-note");
+    document.getElementById("opened-row").hidden = closed;
+    if (data.opened) openedNote.textContent = "Objednávání zahájil " + data.opened.by + " v " + data.opened.at + ".";
+    approveButton.hidden = !!approved || closed;
+    approveButton.disabled = !data.groups.length;
+    unlockButton.hidden = !approved || (stage && stage !== "cancelled");
+    document.getElementById("approve-hint").hidden = !!approved || closed;
+    renderOrderStage(approved, order);
+  }
+
+  // --- admin: ordering and LINE Pay -------------------------------------------
+  const orderForm = document.getElementById("order-form");
+  const pickupSelect = document.getElementById("pickup-time");
+  const payment = document.getElementById("payment");
+  let pickupLoaded = false;
+
+  function renderOrderStage(approved, order) {
+    const stage = order ? order.stage : null;
+    const canOrder = !!approved && (!stage || stage === "cancelled");
+    orderForm.hidden = !canOrder;
+    if (canOrder && !pickupLoaded) loadPickupTimes();
+
+    const paying = stage === "ordered" || stage === "awaiting_payment";
+    payment.hidden = !paying;
+    if (paying) {
+      const time = order.target_time.slice(-5);
+      document.getElementById("payment-text").textContent = stage === "awaiting_payment"
+        ? "🧾 Objednávka odeslána v " + order.at + ": " + money(order.total) + ", vyzvednutí v " + time
+          + ". Zaplať v LINE a pak dej „Zaplatil jsem – dokončit“."
+        : "🧾 Objednávka odeslána, ale LINE Pay platbu nepřipravil. Zkus „Nový odkaz na platbu“, nebo objednávku zruš.";
+      const appLink = document.getElementById("pay-app");
+      const webLink = document.getElementById("pay-web");
+      appLink.hidden = !order.payment_url_app;
+      webLink.hidden = !order.payment_url_web;
+      if (order.payment_url_app) appLink.href = order.payment_url_app;
+      if (order.payment_url_web) webLink.href = order.payment_url_web;
+      document.getElementById("confirm-payment").hidden = stage !== "awaiting_payment";
+    }
+
+    const state = document.getElementById("order-state");
+    const texts = {
+      paid: "✅ Zaplaceno. Číslo objednávky " + order?.order_number + ", vyzvednutí v "
+        + order?.target_time?.slice(-5) + ". Až bude připravená, přijde ti oznámení.",
+      ready: "🍳 Připraveno k vyzvednutí, číslo " + order?.order_number + ".",
+      closed: "✅ Objednávka " + order?.order_number + " je vyřízená.",
+      cancelled: "✖️ Objednávka byla zrušená. Můžeš objednat znovu, nebo otevřít výběr.",
+    };
+    state.hidden = !texts[stage];
+    state.textContent = texts[stage] || "";
+  }
+
+  function loadPickupTimes() {
+    pickupLoaded = true;
+    pickupSelect.replaceChildren(new Option("Načítám časy…", ""));
+    api("api/admin/pickup_times").then((data) => {
+      if (!data.times.length) {
+        pickupSelect.replaceChildren(new Option("Obchod teď nenabízí žádný čas", ""));
+        return;
+      }
+      const [y, m, d] = data.day.split("-").map(Number);
+      const day = data.today ? "" : " (" + d + ". " + m + ".)";
+      pickupSelect.replaceChildren(...data.times.map((t, i) =>
+        new Option((i === 0 ? "Co nejdřív – " : "") + t + day, data.day + " " + t)));
+    }).catch((err) => {
+      pickupLoaded = false;
+      pickupSelect.replaceChildren(new Option("Časy se nenačetly", ""));
+      show(approveStatus, "err", err.message);
+    });
+  }
+
+  document.getElementById("place-order").addEventListener("click", (event) => {
+    const when = pickupSelect.value;
+    if (!when) return;
+    const total = document.getElementById("order-total").textContent;
+    const label = pickupSelect.selectedOptions[0].text.replace("Co nejdřív – ", "");
+    if (!confirm("Objednat za " + total + " s vyzvednutím v " + label + " a zaplatit přes LINE Pay?")) return;
+    adminAction(event.currentTarget, "api/admin/order", "Odesílám objednávku…", { target_time: when });
+  });
+  document.getElementById("confirm-payment").addEventListener("click", (event) =>
+    adminAction(event.currentTarget, "api/admin/confirm_payment", "Ověřuji platbu…"));
+  document.getElementById("pay-again").addEventListener("click", (event) =>
+    adminAction(event.currentTarget, "api/admin/pay_again", "Žádám LINE Pay o nový odkaz…"));
+  document.getElementById("cancel-order").addEventListener("click", (event) => {
+    if (!confirm("Zrušit nezaplacenou objednávku na idingu?")) return;
+    adminAction(event.currentTarget, "api/admin/cancel_order", "Ruším objednávku…");
+  });
+
+  function loadOrder() {
+    if (!isAdmin) return Promise.resolve();
+    return api("api/admin/order").then(renderAdminOrder)
+      .catch((err) => { adminOrder.hidden = false; show(approveStatus, "err", err.message); });
+  }
+
+  async function adminAction(button, path, busyText, body = {}) {
+    button.disabled = true;
+    show(approveStatus, "", busyText);
+    try {
+      renderAdminOrder(await post(path, body));
+      show(approveStatus, "", "");
+      await loadStatus();
+    } catch (err) {
+      show(approveStatus, "err", err.message);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  document.getElementById("open-button").addEventListener("click", (event) =>
+    adminAction(event.currentTarget, "api/admin/open", "Otevírám objednávání…"));
+  document.getElementById("close-button").addEventListener("click", (event) => {
+    if (!confirm("Uzavřít objednávání? Ostatní uvidí jen hlášku, že objednávky nejsou otevřené. "
+      + "Výběry i objednávka zůstanou a jde to zase otevřít.")) return;
+    adminAction(event.currentTarget, "api/admin/close", "Zavírám objednávání…");
+  });
+
+  approveButton.addEventListener("click", () => {
+    if (!confirm("Schválit objednávku? Výběry se zamknou a košík na idingu se přepíše.")) return;
+    adminAction(approveButton, "api/admin/approve", "Přihlašuji se do idingu a plním košík…");
+  });
+  unlockButton.addEventListener("click", () => adminAction(unlockButton, "api/admin/unlock", ""));
+
+  // Show the saved choice once both it and the menu are loaded (unless already picking).
+  function restoreChoice() {
+    if (!menu || !savedChoice || order.set !== null) return;
+    Object.assign(order, savedChoice);
+    update();
+  }
+
+  // --- ticker --------------------------------------------------------------
+  const ticker = document.getElementById("ticker");
+  const track = document.getElementById("ticker-track");
+  let tickerKey = "";
+
+  function renderTicker(entries) {
+    const key = JSON.stringify(entries);
+    if (key === tickerKey) return; // unchanged: keep the animation running smoothly
+    tickerKey = key;
+    ticker.hidden = !entries.length;
+    if (!entries.length) return;
+    const copy = () => {
+      const part = document.createElement("div");
+      part.className = "ticker-copy";
+      for (const e of entries) {
+        const item = document.createElement("span");
+        item.className = "ticker-item " + (e.chosen ? "chosen" : "pending");
+        const name = document.createElement("b");
+        name.textContent = e.name;
+        item.append(e.emoji + " ", name, e.phrase ? " " + e.phrase : "");
+        part.append(item);
+      }
+      return part;
+    };
+    const first = copy();
+    track.replaceChildren(first);
+    // Repeat the entries until one copy is wider than the screen, so the loop has no gap.
+    const single = first.innerHTML;
+    while (first.scrollWidth < ticker.clientWidth && first.childElementCount < 200) {
+      first.insertAdjacentHTML("beforeend", single);
+    }
+    const second = first.cloneNode(true);
+    second.setAttribute("aria-hidden", "true");
+    track.append(second);
+    track.style.setProperty("--ticker-duration", first.scrollWidth / 40 + "s"); // ~40 px per second
+  }
+
+  function loadStatus() {
+    return api("api/status").then(applyStatus).catch(() => {});
+  }
+  // Others' picks show up within half a minute, and right away when the app comes back.
+  const refresh = () => { if (!document.hidden) { loadStatus(); loadOrder(); } };
+  setInterval(refresh, 30000);
+  document.addEventListener("visibilitychange", refresh);
+
+  // Drop choices the new set or drink does not allow, then redraw.
+  function update() {
+    const set = currentSet();
+    if (!set || !set.drinks.includes(order.drink)) order.drink = null;
+    const drink = currentDrink();
+    if (!drink) order.temp = order.size = null;
+    else {
+      if (!drink.hot) order.temp = "iced";
+      if (order.size && !drink.sizes[order.size]) order.size = null;
+    }
+    renderOrder();
+  }
+
+  function loadMenu() {
+    const status = document.getElementById("menu-status");
+    return api("api/menu").then((data) => {
+      menu = data;
+      show(status, data.stale ? "err" : "", data.stale ? "iding teď neodpovídá, menu je z posledního načtení." : "");
+      renderOrder();
+      restoreChoice();
+    }).catch((err) => show(status, "err", err.message));
+  }
+
   // --- start -------------------------------------------------------------
+  if (!document.getElementById("order").hidden) loadMenu();
+  loadStatus();
   api("api/me")
-    .then((me) => { toggle.hidden = !me.is_admin; })
+    .then((me) => { toggle.hidden = !me.is_admin; isAdmin = me.is_admin; loadOrder(); })
     .catch(() => {})
     .finally(render);
 </script>
