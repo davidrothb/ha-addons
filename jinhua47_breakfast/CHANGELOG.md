@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.13.0
+
+- Tlačítko „Smazat všechny výběry“ v kartě objednávky: správce smaže dnešní výběry všech strávníků
+  (jen před schválením; po schválení nejdřív „Znovu otevřít výběr“).
+- Stránka se obnovuje živě: jakmile si někdo vybere, správce schválí, objedná nebo uloží nastavení, ostatní
+  otevřené stránky (karta objednávky u správce i lišta) to ukážou hned, ne až za půl minuty.
+- Po „Zahájit objednávání“ dostane každý strávník s telefonem oznámení „Ahoj <přezdívka>, <hláška>“
+  (hláška ze seznamu denních oznámení, každý den jiná) s textem „Klikni zde a objednej.“; ťuknutí otevře
+  stránku doplňku. Jen při prvním zahájení
+  za den (po uzavření a novém zahájení už ne) a ne tomu, kdo objednávání zahájil. V testovacím režimu
+  jen správcům.
+
 ## 0.12.0
 
 - Objednávání každý den zahajuje správce tlačítkem „Zahájit objednávání“ v kartě „Dnešní objednávka“;

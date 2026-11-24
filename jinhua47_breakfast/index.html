@@ -180,7 +180,8 @@
     <h3>Dnešní objednávka</h3>
     <div id="open-ordering" class="form" hidden>
       <p class="notice">Objednávání je zavřené. Ostatní teď vidí jen hlášku, že objednávky nejsou otevřené:
-        bez přezdívky, hlášek, lišty i výběru.</p>
+        bez přezdívky, hlášek, lišty i výběru. Po zahájení dostanou strávníci s telefonem oznámení
+        „Ahoj přezdívko, hláška“ (hlášky z denních oznámení).</p>
       <button id="open-button" class="primary">Zahájit objednávání</button>
     </div>
     <div id="opened-row" class="summary-row" hidden>
@@ -214,6 +215,7 @@
     <p id="order-state" class="notice" hidden></p>
     <button id="approve" class="primary">Schválit a poslat do košíku</button>
     <button id="unlock" class="secondary" hidden>Znovu otevřít výběr</button>
+    <button id="clear-all" class="secondary" hidden>Smazat všechny výběry</button>
     <p id="approve-hint" class="hint">Schválení zamkne výběry a přepíše košík na účtu iding. Nic se neobjedná ani nezaplatí.</p>
     <div id="approve-status" class="status" role="status"></div>
   </section>
@@ -285,6 +287,8 @@
     <label class="field">Hlášky v oznámení (jedna na řádek): „Ahoj přezdívko, hláška“
       <textarea id="notification-phrases" rows="4"></textarea>
     </label>
+    <p class="hint">Stejné hlášky dostanou strávníci i v oznámení po „Zahájit objednávání“
+      (pod nimi „Klikni zde a objednej.“).</p>
   </section>
   <section class="form">
     <h3>Testovací režim</h3>
@@ -758,9 +762,11 @@
     renderTicker(locked ? [lockEntry, ...data.ticker] : data.ticker);
     previousChoice = data.previous || null;
     const mineChanged = choiceKey(data.mine || {}) !== choiceKey(savedChoice || {});
+    const hadSaved = !!savedChoice;
     savedChoice = data.mine;
-    // Another device (or the admin's lock) changed things: show the saved state.
-    if (menu && (lockChanged || mineChanged) && (locked || savedChoice)) {
+    // Another device (or the admin's lock) changed things: show the saved state. A saved pick that
+    // vanished (the admin cleared all picks, or "Začít znovu" elsewhere) starts over.
+    if (menu && (lockChanged || mineChanged) && (locked || savedChoice || hadSaved)) {
       Object.assign(order, savedChoice || { set: null, drink: null, temp: null, size: null });
       update();
     } else if (menu) {
@@ -818,6 +824,8 @@
     approveButton.hidden = !!approved || closed;
     approveButton.disabled = !data.groups.length;
     unlockButton.hidden = !approved || (stage && stage !== "cancelled");
+    // Only before approval: approved picks are in the iding cart.
+    document.getElementById("clear-all").hidden = !!approved || !data.members.some((m) => m.choice);
     document.getElementById("approve-hint").hidden = !!approved || closed;
     renderOrderStage(approved, order);
   }
@@ -921,6 +929,10 @@
 
   document.getElementById("open-button").addEventListener("click", (event) =>
     adminAction(event.currentTarget, "api/admin/open", "Otevírám objednávání…"));
+  document.getElementById("clear-all").addEventListener("click", (event) => {
+    if (!confirm("Smazat dnešní výběry všech strávníků? Každý bude vybírat znovu od začátku.")) return;
+    adminAction(event.currentTarget, "api/admin/clear", "Mažu výběry…");
+  });
   document.getElementById("close-button").addEventListener("click", (event) => {
     if (!confirm("Uzavřít objednávání? Ostatní uvidí jen hlášku, že objednávky nejsou otevřené. "
       + "Výběry i objednávka zůstanou a jde to zase otevřít.")) return;
@@ -984,6 +996,24 @@
   const refresh = () => { if (!document.hidden) { loadStatus(); loadOrder(); } };
   setInterval(refresh, 30000);
   document.addEventListener("visibilitychange", refresh);
+
+  // Live: /api/wait answers as soon as anything is saved (someone picks, the admin approves...),
+  // or after ~25 s with nothing new; then ask again. The 30 s refresh above stays as a fallback.
+  (async function live() {
+    let version = -1;
+    for (;;) {
+      try {
+        const query = (location.search ? location.search + "&" : "?") + "v=" + version;
+        const response = await fetch("api/wait" + query);
+        if (!response.ok) throw new Error(response.status);
+        const { v } = await response.json();
+        if (version !== -1 && v !== version) refresh();
+        version = v;
+      } catch {
+        await new Promise((r) => setTimeout(r, 5000)); // add-on restarting or offline
+      }
+    }
+  })();
 
   // Drop choices the new set or drink does not allow, then redraw.
   function update() {

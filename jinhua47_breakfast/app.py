@@ -44,6 +44,7 @@ ADMIN_GROUP = "system-admin"
 CACHE_SECONDS = 60
 ORDER_WATCH_SECONDS = int(os.environ.get("ORDER_WATCH_SECONDS", "60"))  # how often a paid order is checked
 PICK_EPOCH = date(2026, 1, 1)  # daily picks (nicknames, phrases) are replayed from here
+WAIT_SECONDS = 25  # how long /api/wait holds a request open when nothing changes
 MENU_CACHE_SECONDS = 600  # the menu is ~450 KB; sold-out items show up within ten minutes
 # The daily notification goes out at most this long after its time, so a
 # restart later in the day does not send a stale morning reminder.
@@ -213,6 +214,9 @@ def daily_assignment(today: date, kind: str, user_ids: tuple[str, ...], items: t
 
 class App:
     def __init__(self, dev: bool):
+        # Bumped on every saved change; pages long-poll /api/wait to show it right away.
+        self.version = 0
+        self.changed = threading.Condition()
         self.dev = dev
         data_dir = HERE / "dev_data" if dev else Path("/data")
         data_dir.mkdir(exist_ok=True)
@@ -228,6 +232,8 @@ class App:
         self.approved: dict | None = stored_choices.get("approved")
         # {"by", "at"} once an admin started today's ordering; until then members see only a notice.
         self.opened: dict | None = stored_choices.get("opened")
+        # Whether today's invitation to members went out (only on the first opening of the day).
+        self.invited: bool = stored_choices.get("invited", False)
         # Which "ready" notification each admin got today ("you" or "all"), so it is sent once.
         self.admin_notified: dict = stored_choices.get("admin_notified", {})
         # Today's iding order once placed: stage ordered -> awaiting_payment -> paid -> ready -> closed
@@ -281,6 +287,7 @@ class App:
                     self.previous[user_id] = {"date": self._choices_date, "choice": choice}
             self._choices_date, self._choices, self.approved, self.admin_notified = today, {}, None, {}
             self.opened = None
+            self.invited = False
             self.order = None
         return self._choices
 
@@ -304,12 +311,52 @@ class App:
     def visible(self, user: dict) -> bool:
         return self.view(user) == "open"
 
-    def open_ordering(self, by: str) -> None:
+    def open_ordering(self, by: str) -> bool:
+        """Open today's ordering; True when members should be invited (first opening of the day)."""
         with self.lock:
             self.choices()
             if self.opened is None:
                 self.opened = {"by": by, "at": datetime.now(TZ).strftime("%H:%M")}
-                self.save_choices()
+            invite, self.invited = not self.invited, True
+            self.save_choices()
+            return invite
+
+    def invite_members(self, opener_id: str) -> None:
+        """"Ahoj <přezdívka>, <hláška z denních oznámení>" with "Klikni zde a objednej." to every
+        member with a phone but the opener.
+
+        In test mode only admins get it. Tapping opens the add-on page.
+        """
+        try:
+            users = {u["id"]: u for u in self.users()}
+        except (OSError, RuntimeError) as exc:
+            log(f"Seznam uživatelů se nenačetl, pozvánky neodešly: {exc}")
+            return
+        phones = self.settings["phones"]
+        for user_id in self.settings["members"]:
+            user, phone = users.get(user_id), phones.get(user_id)
+            if not user or not phone or user_id == opener_id:
+                continue
+            if self.settings.get("test_mode") and not user["is_admin"]:
+                continue
+            title = self.notification_message(user_id, user["name"])
+            try:
+                self.send_notification(phone, "Klikni zde a objednej.", title=title)
+                log(f"Pozvánka pro {user['name']}: {title}")
+            except (urllib.error.URLError, OSError) as exc:
+                log(f"Pozvánka na notify.{phone} selhala: {exc}")
+
+    def clear_choices(self) -> int:
+        """Drop everyone's picks for today (before approval); returns how many there were."""
+        with self.lock:
+            choices = self.choices()
+            if self.approved is not None:
+                raise IdingError("Objednávka je schválená. Nejdřív dej „Znovu otevřít výběr“.")
+            count = len(choices)
+            choices.clear()
+            self.admin_notified = {}
+            self.save_choices()
+            return count
 
     def close_ordering(self) -> None:
         """Hide today's ordering from members again; picks, approval and the order stay."""
@@ -332,11 +379,25 @@ class App:
             "previous": self.previous,
             "approved": self.approved,
             "opened": self.opened,
+            "invited": self.invited,
             "admin_notified": self.admin_notified,
             "order": self.order,
         }
         tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2))
         tmp.replace(self.choices_file)
+        self.bump()
+
+    def bump(self) -> None:
+        """Something the pages show changed: wake every page waiting in /api/wait."""
+        with self.changed:
+            self.version += 1
+            self.changed.notify_all()
+
+    def wait_for_change(self, seen: int, timeout: float) -> int:
+        """The current version, as soon as it differs from `seen` or after `timeout` seconds."""
+        with self.changed:
+            self.changed.wait_for(lambda: self.version != seen, timeout)
+            return self.version
 
     def order_overview(self) -> dict:
         """For the admin: each member's pick, identical picks grouped, and the total."""
@@ -832,6 +893,7 @@ class App:
         tmp = self.settings_file.with_suffix(".tmp")
         tmp.write_text(json.dumps(self.settings, ensure_ascii=False, indent=2))
         tmp.replace(self.settings_file)
+        self.bump()
 
     def admin_names(self) -> set[str]:
         """The `admins` option, lowercased; empty means every Home Assistant admin."""
@@ -904,11 +966,12 @@ class App:
             key=lambda p: p["label"].lower(),
         )
 
-    def send_notification(self, service: str, message: str, url: str | None = None) -> None:
+    def send_notification(self, service: str, message: str, url: str | None = None,
+                          title: str = "Jinhua47 Snídaně") -> None:
         """Tapping opens `url` (e.g. the LINE Pay link), by default the add-on panel in the Companion app."""
         target = url or self.panel_path
         payload = {
-            "title": "Jinhua47 Snídaně",
+            "title": title,
             "message": message,
             "data": {"url": target, "clickAction": target} if target else {},
         }
@@ -1010,6 +1073,8 @@ class Handler(BaseHTTPRequestHandler):
             self.guarded(self.get_me)
         elif route == "/api/status":
             self.guarded(self.get_status)
+        elif route == "/api/wait":
+            self.guarded(self.get_wait)
         elif route == "/api/menu":
             try:
                 self.send_json(200, self.app.menu())
@@ -1036,6 +1101,8 @@ class Handler(BaseHTTPRequestHandler):
             self.guarded(self.post_open, admin=True)
         elif route == "/api/admin/close":
             self.guarded(self.post_close, admin=True)
+        elif route == "/api/admin/clear":
+            self.guarded(self.post_clear, admin=True)
         elif route == "/api/admin/unlock":
             self.guarded(self.post_unlock, admin=True)
         elif route == "/api/admin/order":
@@ -1073,6 +1140,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def get_me(self, user: dict) -> None:
         self.send_json(200, {**user, "is_member": self.app.is_member(user["id"])})
+
+    def get_wait(self, user: dict) -> None:
+        """Long poll: answers {"v": version} once anything changed since ?v=, or after WAIT_SECONDS."""
+        query = dict(p.partition("=")[::2] for p in self.path.partition("?")[2].split("&") if p)
+        try:
+            seen = int(query.get("v", "-1"))
+        except ValueError:
+            seen = -1
+        self.send_json(200, {"v": self.app.wait_for_change(seen, WAIT_SECONDS)})
 
     def get_status(self, user: dict) -> None:
         """The ticker for everyone, plus the caller's own choice for today."""
@@ -1155,9 +1231,18 @@ class Handler(BaseHTTPRequestHandler):
         self.get_order(user)
 
     def post_open(self, user: dict) -> None:
-        self.app.open_ordering(user["name"])
+        invite = self.app.open_ordering(user["name"])
         log(f"{user['name']} zahájil objednávání.")
+        if invite:  # in the background: a slow phone must not hold up the page
+            threading.Thread(target=self.app.invite_members, args=(user["id"],), daemon=True).start()
         self.get_order(user)
+
+    def post_clear(self, user: dict) -> None:
+        def clear() -> None:
+            count = self.app.clear_choices()
+            log(f"{user['name']} smazal všechny dnešní výběry ({count}).")
+
+        self.order_action(user, clear)
 
     def post_close(self, user: dict) -> None:
         self.app.close_ordering()

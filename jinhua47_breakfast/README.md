@@ -2,6 +2,7 @@
 
 Společná ranní objednávka snídaně z [金華47](https://iding.tw/store/af0f1c4c).
 Každý den objednávání zahajuje správce tlačítkem **Zahájit objednávání** (o půlnoci se zase zavře).
+Strávníci s telefonem pak dostanou oznámení „Ahoj <přezdívka>, <hláška z denních oznámení>“ a „Klikni zde a objednej.“
 Do té doby ostatní vidí jen hlášku, že objednávky nejsou otevřené. Tlačítkem **Uzavřít objednávání**
 jde objednávání kdykoliv zase zavřít.
 Zatím testovací základ: stránka pozdraví přihlášeného uživatele Home Assistantu a strávník si
