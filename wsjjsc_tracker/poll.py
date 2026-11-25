@@ -8,6 +8,7 @@ and, with --plot-out, redraws the weekly chart once a day after closing time.
 import argparse
 import csv
 import re
+import signal
 import sys
 import time
 import urllib.request
@@ -160,6 +161,8 @@ def main() -> None:
     parser.add_argument("--once", action="store_true", help="take one sample now and exit")
     parser.add_argument("--plot-out", type=Path, help="PNG redrawn every day after closing")
     args = parser.parse_args()
+    # Home Assistant stops the add-on with SIGTERM; exit cleanly with code 0.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     if args.once:
         poll_once(args.csv)
         publish(args.csv)

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1
+
+- Add-on se při zastavení ukončí čistě (zpracuje SIGTERM).
+
 ## 1.1.0
 
 - Senzory v Home Assistantu: obsazenost (počet a %), obvyklá obsazenost touto dobou, nejvolnější čas a otevřeno/zavřeno.

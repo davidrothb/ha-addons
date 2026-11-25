@@ -1,5 +1,5 @@
 name: WSJJSC Tracker
-version: "1.1.0"
+version: "1.1.1"
 slug: wsjjsc_tracker
 description: Obsazenost posilovny jako senzory v Home Assistantu, CSV historie a denní graf
 url: https://github.com/davidrothb/ha-addons/tree/main/wsjjsc_tracker
