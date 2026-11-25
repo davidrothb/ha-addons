@@ -59,11 +59,45 @@ Správci vidí v horní liště ozubené kolečko a pod ním nastavují:
   musí si v účtu nastavit heslo. Heslo se uloží do `/data/settings.json` doplňku (je i v zálohách HA)
   a stránka ho už nikdy nezobrazí.
 
+## Události pro automatizace
+
+Při každé změně stavu dnešní objednávky doplněk vyšle v Home Assistantu událost, na kterou jde
+navázat automatizace (spouštěč **Ruční událost** / `platform: event`):
+
+| Událost | Kdy |
+| --- | --- |
+| `jinhua47_breakfast_ordered` | objednávka odeslaná na iding (ještě nezaplacená) |
+| `jinhua47_breakfast_paid` | zaplaceno |
+| `jinhua47_breakfast_ready` | obchod ji označil jako připravenou k vyzvednutí |
+| `jinhua47_breakfast_closed` | vyřízená (vyzvednutá) |
+| `jinhua47_breakfast_cancelled` | zrušená |
+
+Data události: `stage`, `order_id`, `order_number`, `total` (NT$), `items` (počet setů),
+`pickup_time` (`HH:MM`), `pickup` (`YYYY-MM-DD HH:MM`), `by` a `by_user_id` (kdo objednal).
+Každá odeslaná událost je i v logu doplňku („Událost …“).
+
+```yaml
+automation:
+  - alias: Snídaně zaplacená
+    triggers:
+      - trigger: event
+        event_type: jinhua47_breakfast_paid
+    actions:
+      - action: notify.notify
+        data:
+          message: "Snídaně objednaná ({{ trigger.event.data.total }} NT$), vyzvednutí v {{ trigger.event.data.pickup_time }}."
+```
+
+Vyzkoušet jde i bez objednávky: Vývojářské nástroje → Události → odeslat např.
+`jinhua47_breakfast_paid` s daty `{"total": 190, "pickup_time": "08:30"}`.
+
 ## Fotky setů
 
-U setů se ukazuje náhled fotky. Vlastní fotky patří do složky [`photos/`](photos/), pojmenované podle
-setu (seznam názvů je v [`photos/README.md`](photos/README.md)). Mají přednost před fotkami z idingu,
-které mají zatím jen dva sety. Po přidání fotky zvyš `version` a doplněk aktualizuj.
+U setů se ukazuje náhled fotky. Vlastní fotky nahraj v Home Assistantu do
+`/addon_configs/<slug doplňku>/photos/` (přes Samba, File editor nebo Studio Code Server; přesná cesta
+je v logu doplňku a seznam názvů souborů v `NAZVY.txt` tamtéž). Ukážou se do 10 minut bez nové verze
+a na GitHub se nedostanou. Fotky v repozitáři patří do [`photos/`](photos/) (víc v
+[`photos/README.md`](photos/README.md)). Vlastní fotky mají přednost před fotkami z idingu.
 
 ## Lokální vývoj
 

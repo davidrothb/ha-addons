@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.15.0
+
+- Události v Home Assistantu pro automatizace při každé změně stavu objednávky:
+  `jinhua47_breakfast_ordered`, `_paid`, `_ready`, `_closed` a `_cancelled`, s číslem objednávky, cenou,
+  počtem setů, časem vyzvednutí a tím, kdo objednal. Popis a příklad jsou v README. Každá událost se
+  zapíše do logu i s tím, jestli ji Home Assistant přijal, případně s chybou a jeho odpovědí.
+- Vlastní fotky setů jde nahrát přímo do Home Assistantu do `/addon_configs/<slug doplňku>/photos/`
+  (Samba, File editor, Studio Code Server), bez GitHubu a bez nové verze; ukážou se do 10 minut. Složka
+  a soubor `NAZVY.txt` s názvy souborů se vytvoří samy, přesná cesta je v logu doplňku.
+
 ## 0.14.0
 
 - Náhledy fotek u setů (i u „Jako včera“). Ťuknutí na náhled ukáže fotku přes celou obrazovku a set

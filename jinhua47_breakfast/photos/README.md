@@ -1,13 +1,17 @@
 # Vlastní fotky setů
 
-Sem patří vlastní fotky setů. Fotka v této složce má přednost před fotkou z idingu.
+Fotky, které nemají být na GitHubu, nahraj přímo do Home Assistantu do složky
+`/addon_configs/<slug doplňku>/photos/` (přesná cesta je v logu doplňku po startu, složka i soubor
+`NAZVY.txt` se seznamem názvů se vytvoří samy). Nahrát jde přes doplněk Samba (sdílení `addon_configs`),
+File editor nebo Studio Code Server. Fotka se ukáže do 10 minut, nebo hned po restartu doplňku,
+bez nové verze.
 
-Soubor pojmenuj podle setu, podle tabulky níže. Může mít příponu `.jpg`, `.jpeg`, `.png` nebo `.webp`.
-Stránka fotku ukáže jako čtvercový náhled (oříznutý na střed) a po ťuknutí celou. Stačí
-šířka kolem 800 px, ať se stránka na telefonu načítá rychle.
+Tahle složka v repozitáři je pro fotky, které na GitHubu být můžou. Po přidání fotky sem je potřeba
+zvýšit `version` v `../config.yaml`, commitnout, pushnout a doplněk aktualizovat.
 
-Fotky jsou součástí doplňku. Po přidání nebo výměně fotky proto zvyš `version` v `../config.yaml`,
-commitni, pushni a doplněk v Home Assistantu aktualizuj.
+Fotka z Home Assistantu má přednost před fotkou odsud a obě před fotkou z idingu. Soubor pojmenuj podle
+setu, podle tabulky níže, s příponou `.jpg`, `.jpeg`, `.png` nebo `.webp`. Stránka ukáže fotku jako
+čtvercový náhled (oříznutý na střed) a po ťuknutí celou. Ideálně 1200 × 900 px, JPEG kolem 80 %.
 
 | Set | Soubor | Fotka na idingu |
 | --- | --- | --- |

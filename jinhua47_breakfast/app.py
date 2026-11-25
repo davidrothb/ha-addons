@@ -39,7 +39,9 @@ from iding import Iding, IdingError
 SUPERVISOR = "http://supervisor"
 INGRESS_PROXY_IP = "172.30.32.2"
 HERE = Path(__file__).parent
-# Own photos of the sets, named by set (photos/README.md); they win over iding's.
+# Own photos of the sets, named by set (photos/README.md); they win over iding's. First the add-on's
+# config folder in Home Assistant (/addon_configs/<slug>/photos, uploaded there, not on GitHub),
+# then the ones shipped with the add-on.
 PHOTOS_DIR = HERE / "photos"
 PHOTO_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
 PHOTO_MAX_BYTES = 5_000_000
@@ -88,6 +90,8 @@ TICKER_EMOJI = {
 ORDER_SENT, ORDER_READY, ORDER_CLOSED, ORDER_CANCELLED = 1, 2, 3, 4
 # Order stages after which the picks may be reopened and ordered again.
 ORDER_REOPENABLE = ("cancelled",)
+# Order stages announced to Home Assistant as events jinhua47_breakfast_<stage>.
+ORDER_EVENTS = ("ordered", "paid", "ready", "closed", "cancelled")
 TEMPERATURES = ("iced", "hot")
 SIZES = ("small", "large")
 # Settings that were add-on options up to 0.4.0, copied over once.
@@ -235,6 +239,8 @@ class App:
         self.settings_file = data_dir / "settings.json"
         self.menu_file = data_dir / "menu.json"  # last good menu, used while iding is down
         self.photo_cache = data_dir / "photos"  # iding's set photos, downloaded once
+        # /config is the add-on's own config folder (config.yaml map: addon_config), /addon_configs/<slug> in HA.
+        self.own_photos_dir = (HERE / "dev_config" if dev else Path("/config")) / "photos"
         self.photo_lock = threading.Lock()
         # Today's picks and the admin's approval: {"date", "choices": {user_id: ..}, "approved": {..} | None}
         self.choices_file = data_dir / "choices.json"
@@ -280,6 +286,7 @@ class App:
                 if not result["sets"]:
                     raise IdingError("V menu idingu nejsou žádné sety.")
                 self.menu_file.write_text(json.dumps(result, ensure_ascii=False))
+                self.write_photo_names(result["sets"])
             except IdingError as exc:
                 if not cached and self.menu_file.exists():
                     cached = json.loads(self.menu_file.read_text())
@@ -294,13 +301,26 @@ class App:
 
     # --- set photos ------------------------------------------------------------
 
-    @staticmethod
-    def own_photo(set_slug: str) -> Path | None:
-        """photos/<slug>.jpg (or .jpeg, .png, .webp) when there is one."""
+    def own_photo(self, set_slug: str) -> Path | None:
+        """<slug>.jpg (or .jpeg, .png, .webp) from the config folder in HA, else from the add-on."""
         if not set_slug:
             return None
-        return next((PHOTOS_DIR / f"{set_slug}{ext}" for ext in PHOTO_TYPES
-                     if (PHOTOS_DIR / f"{set_slug}{ext}").is_file()), None)
+        return next((folder / f"{set_slug}{ext}" for folder in (self.own_photos_dir, PHOTOS_DIR)
+                     for ext in PHOTO_TYPES if (folder / f"{set_slug}{ext}").is_file()), None)
+
+    def write_photo_names(self, sets: list) -> None:
+        """NAZVY.txt in the config photo folder: which file name belongs to which set."""
+        lines = ["Vlastní fotky setů: soubor pojmenuj podle setu (.jpg, .jpeg, .png nebo .webp).",
+                 "Fotka se na stránce ukáže do 10 minut, nebo hned po restartu doplňku.", ""]
+        lines += [f"{item['slug']}.jpg    {item['label']}" for item in sets]
+        text = "\n".join(lines) + "\n"
+        names = self.own_photos_dir / "NAZVY.txt"
+        try:
+            self.own_photos_dir.mkdir(parents=True, exist_ok=True)
+            if not names.is_file() or names.read_text() != text:
+                names.write_text(text)
+        except OSError as exc:
+            log(f"Složku na vlastní fotky nejde připravit: {exc}")
 
     def photo_link(self, item: dict) -> str | None:
         """Relative URL of the set's photo for the page (own photo first, then iding's), or None.
@@ -608,9 +628,48 @@ class App:
             self.choices()
             if only_id is not None and (self.order or {}).get("id") != only_id:
                 return {}
+            before = (self.order or {}).get("stage")
             self.order = {**(self.order or {}), **changes}
             self.save_choices()
-            return dict(self.order)
+            order = dict(self.order)
+            items = (self.approved or {}).get("items")
+        if order.get("stage") != before and order.get("stage") in ORDER_EVENTS:
+            self.fire_order_event(order, items)
+        return order
+
+    def fire_order_event(self, order: dict, items) -> None:
+        """Home Assistant event jinhua47_breakfast_<stage> (ordered, paid, ready, closed, cancelled)
+        for automations; sent in the background and logged."""
+        event = f"jinhua47_breakfast_{order['stage']}"
+        target = order.get("target_time") or ""
+        data = {
+            "stage": order["stage"],
+            "order_id": order.get("id"),
+            "order_number": order.get("order_number"),
+            "total": order.get("total"),
+            "items": items,
+            "pickup_time": target[-5:],
+            "pickup": target,
+            "by": order.get("by"),
+            "by_user_id": order.get("by_id"),
+        }
+
+        def fire() -> None:
+            log(f"Událost → {event}: {json.dumps(data, ensure_ascii=False)}")
+            if self.dev:
+                log(f"[dev] Událost → {event}: neposláno (dev režim)")
+                return
+            try:
+                supervisor_call("POST", f"/core/api/events/{event}", data)
+            except urllib.error.HTTPError as exc:
+                body = exc.read().decode(errors="replace")[:300]
+                log(f"Událost → {event}: Home Assistant odmítl (HTTP {exc.code}): {body}")
+            except (urllib.error.URLError, OSError) as exc:
+                log(f"Událost → {event}: selhalo: {exc}")
+            else:
+                log(f"Událost → {event}: Home Assistant přijal ✓")
+
+        threading.Thread(target=fire, daemon=True).start()
 
     def place_order(self, user: dict, target_time: str) -> None:
         """Order the approved cart for pickup at target_time ("YYYY-MM-DD HH:MM") and ask LINE Pay.
@@ -939,6 +998,7 @@ class App:
             return
         try:
             self.panel_path = "/" + supervisor_call("GET", "/addons/self/info")["data"]["slug"]
+            log(f"Vlastní fotky setů patří do /addon_configs{self.panel_path}/photos (názvy v NAZVY.txt).")
         except (urllib.error.URLError, KeyError, ValueError) as exc:
             log(f"Nepodařilo se zjistit adresu panelu: {exc}")
         if not (self.settings["iding"]["phone"] and self.settings["iding"]["password"]):
