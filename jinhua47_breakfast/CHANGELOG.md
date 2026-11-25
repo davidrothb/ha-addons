@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.14.0
+
+- Náhledy fotek u setů (i u „Jako včera“). Ťuknutí na náhled ukáže fotku přes celou obrazovku a set
+  nevybere. Zatím mají fotku na idingu jen dva sety: dánský toast s vepřovým a dětský set. Doplněk je stáhne
+  jednou a pak je podává sám z `/data`.
+- Složka `photos/` pro vlastní fotky setů, pojmenované podle setu (seznam názvů je v `photos/README.md`).
+  Vlastní fotka má přednost před fotkou z idingu.
+
+## 0.13.3
+
+- Tlačítko „Resetovat objednávku v doplňku“ (pro správce, kdykoliv je nějaká objednávka): zapomene dnešní
+  objednávku jen v doplňku, bez ohledu na stav na idingu (na iding nic nepošle). Zruší i schválení, výběry
+  zůstanou. Pro zaseknuté případy, např. platbu, kterou iding už nedokončí, a objednávku, kterou obchod
+  nechce zrušit („您的餐點店家可能已準備…“).
+- Log po zahájení objednávání shrne pozvánky: komu odešly, komu selhaly a kdo ji nedostal a proč
+  (zahájil, nemá telefon, testovací režim). Při dalším otevření téhož dne zapíše, že se znovu neposílají.
+- Hlídání objednávky na idingu nevrátí zpátky objednávku, kterou správce mezitím resetoval.
+- Oznámení „Zaplaceno ✓.“ má správnou interpunkci i bez čísla objednávky.
+- Nad tlačítkem „Zahájit objednávání“ už není vysvětlující text.
+- Karta „Dnešní objednávka“ nemá pod „Celkem“ prázdné místo, když tam zrovna není žádná hláška.
+- Pod výběrem už není text „Do košíku na idingu to pošle správce, až objednávku schválí.“
+
+## 0.13.2
+
+- Každé odeslané oznámení (pozvánka, denní, správci, průběh objednávky, testovací) se zapíše do logu:
+  komu a na který `notify.*`, nadpis, text, odkaz a jestli ho Home Assistant přijal, případně s chybou
+  a odpovědí HA.
+
+## 0.13.1
+
+- Oprava platby: „Zaplatil jsem – dokončit“ se nejdřív podívá na objednávku na idingu. Když je už zaplacená
+  jinde (např. na iding.tw v prohlížeči po neúspěšném prvním pokusu v LINE), označí ji jako zaplacenou
+  místo neúspěšného dokončení staré platby LINE Pay (iding hlásil 付款確認已超出等待時間).
+- Doplněk sám každou minutu hlídá i nezaplacenou objednávku: zaplacení jinde pozná a pošle „Zaplaceno ✓“;
+  zrušení na idingu taky.
+- Když dokončení LINE Pay selže, stránka řekne, co dál (nový odkaz na platbu, nebo počkat na zaplacení jinde).
+  Chyby idingu ukazují i jeho kód (např. „kód 5013“).
+- Oznámení a stránka nepíšou „číslo None“, když iding číslo objednávky nevrátí.
+
 ## 0.13.0
 
 - Tlačítko „Smazat všechny výběry“ v kartě objednávky: správce smaže dnešní výběry všech strávníků

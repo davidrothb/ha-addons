@@ -80,6 +80,7 @@
   }
   button:disabled { opacity: .6; cursor: wait; }
   .status { min-height: 1.5em; font-size: 14px; }
+  #approve-status:empty { display: none; } /* no blank line at the bottom of the order card */
   .ok { color: var(--ok); }
   .err { color: var(--err); }
   .user { padding: 16px 0; border-bottom: 1px solid var(--line); display: grid; gap: 8px; }
@@ -124,6 +125,16 @@
   .choice:has(input:checked) { border-color: var(--accent); }
   .choice:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
   .choice:has(input:disabled) { opacity: .45; cursor: not-allowed; }
+  .choice > div:not(.choice-price) { flex: 1; min-width: 0; }
+  .choice-photo {
+    width: 56px; height: 56px; flex-shrink: 0; border-radius: 8px; object-fit: cover;
+    background: var(--line); cursor: zoom-in;
+  }
+  .photo-view {
+    position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
+    padding: 16px; background: rgba(0, 0, 0, .85); cursor: zoom-out;
+  }
+  .photo-view img { max-width: 100%; max-height: 100%; border-radius: 12px; }
   .choice-name { font-weight: 600; overflow-wrap: anywhere; }
   .choice-sub { font-size: 13px; color: var(--muted); }
   .choice-price { font-size: 14px; color: var(--muted); white-space: nowrap; }
@@ -179,9 +190,6 @@
   <section id="admin-order" class="form" hidden>
     <h3>Dnešní objednávka</h3>
     <div id="open-ordering" class="form" hidden>
-      <p class="notice">Objednávání je zavřené. Ostatní teď vidí jen hlášku, že objednávky nejsou otevřené:
-        bez přezdívky, hlášek, lišty i výběru. Po zahájení dostanou strávníci s telefonem oznámení
-        „Ahoj přezdívko, hláška“ (hlášky z denních oznámení).</p>
       <button id="open-button" class="primary">Zahájit objednávání</button>
     </div>
     <div id="opened-row" class="summary-row" hidden>
@@ -213,6 +221,7 @@
       </div>
     </div>
     <p id="order-state" class="notice" hidden></p>
+    <button id="reset-order" class="secondary" hidden>Resetovat objednávku v doplňku</button>
     <button id="approve" class="primary">Schválit a poslat do košíku</button>
     <button id="unlock" class="secondary" hidden>Znovu otevřít výběr</button>
     <button id="clear-all" class="secondary" hidden>Smazat všechny výběry</button>
@@ -256,7 +265,7 @@
       <div class="summary-row">
         <div>
           <div id="summary-text"></div>
-          <p id="summary-hint" class="hint">Do košíku na idingu to pošle správce, až objednávku schválí.</p>
+          <p id="summary-hint" class="hint" hidden></p>
         </div>
         <div id="summary-price" class="total"></div>
       </div>
@@ -602,6 +611,7 @@
       input.disabled = !!o.disabled || locked;
       input.checked = o.value === selected;
       input.addEventListener("change", () => onPick(o.value));
+      if (o.photo) label.append(photoThumb(o.photo, o.name));
       const text = document.createElement("div");
       const name = document.createElement("div");
       name.className = "choice-name";
@@ -616,9 +626,36 @@
       const price = document.createElement("div");
       price.className = "choice-price";
       price.textContent = o.price || "";
-      label.append(input, text, price);
+      label.prepend(input);
+      label.append(text, price);
       return label;
     }));
+  }
+
+  // A small photo on a card; tapping it shows the photo full screen instead of picking the card.
+  function photoThumb(src, alt) {
+    const img = document.createElement("img");
+    img.className = "choice-photo";
+    img.src = src;
+    img.alt = alt;
+    img.loading = "lazy";
+    img.addEventListener("error", () => img.remove());
+    img.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const view = document.createElement("div");
+      view.className = "photo-view";
+      const big = document.createElement("img");
+      big.src = src;
+      big.alt = alt;
+      view.append(big);
+      const close = () => { view.remove(); document.removeEventListener("keydown", onKey); };
+      const onKey = (e) => { if (e.key === "Escape") close(); };
+      view.addEventListener("click", close);
+      document.addEventListener("keydown", onKey);
+      document.body.append(view);
+    });
+    return img;
   }
 
   function reveal(id) {
@@ -635,7 +672,7 @@
     const set = currentSet();
     const drink = currentDrink();
     const setCard = (s) => ({
-      value: s.index, name: s.label, price: money(s.price),
+      value: s.index, name: s.label, price: money(s.price), photo: s.photo,
       sub: s.sold_out ? "vyprodáno" : s.contents, disabled: s.sold_out,
     });
     const pickSet = (v) => { order.set = v; update(); reveal("drink-step"); };
@@ -646,6 +683,7 @@
       document.getElementById("previous-title").textContent = "↩️ " + p.title;
       choices(document.getElementById("previous-choice"), "previous", [{
         value: "previous", name: p.set, price: money(p.price),
+        photo: menu.sets.find((s) => s.index === p.choice.set)?.photo,
         sub: p.error ? "Dnes nejde: " + p.error : p.drink, disabled: !!p.error,
       }], choiceKey(order) === choiceKey(p.choice) ? "previous" : null, () => {
         Object.assign(order, p.choice); update(); reveal("summary");
@@ -691,9 +729,9 @@
       const saved = savedChoice && choiceKey(savedChoice) === choiceKey(order);
       saveChoiceButton.disabled = saved;
       saveChoiceButton.hidden = locked;
-      document.getElementById("summary-hint").textContent = locked
-        ? "Schváleno správcem, je v košíku na idingu."
-        : "Do košíku na idingu to pošle správce, až objednávku schválí.";
+      const summaryHint = document.getElementById("summary-hint");
+      summaryHint.textContent = locked ? "Schváleno správcem, je v košíku na idingu." : "";
+      summaryHint.hidden = !locked;
       saveChoiceButton.textContent = saved ? "Vybráno ✓" : savedChoice ? "Uložit změnu" : "Vybrat";
     }
     document.getElementById("locked-note").hidden = !locked;
@@ -849,26 +887,29 @@
       document.getElementById("payment-text").textContent = stage === "awaiting_payment"
         ? "🧾 Objednávka odeslána v " + order.at + ": " + money(order.total) + ", vyzvednutí v " + time
           + ". Zaplať v LINE a pak dej „Zaplatil jsem – dokončit“."
-        : "🧾 Objednávka odeslána, ale LINE Pay platbu nepřipravil. Zkus „Nový odkaz na platbu“, nebo objednávku zruš.";
+        : "🧾 Objednávka odeslána, ale LINE Pay platbu nepřipravil. Zkus „Nový odkaz na platbu“, nebo objednávku zruš."
+          + " Když jsi zaplatil jinde (na iding.tw), dej „Zaplatil jsem – dokončit“.";
       const appLink = document.getElementById("pay-app");
       const webLink = document.getElementById("pay-web");
       appLink.hidden = !order.payment_url_app;
       webLink.hidden = !order.payment_url_web;
       if (order.payment_url_app) appLink.href = order.payment_url_app;
       if (order.payment_url_web) webLink.href = order.payment_url_web;
-      document.getElementById("confirm-payment").hidden = stage !== "awaiting_payment";
+      // Also when LINE Pay was not prepared: the order may have been paid on iding.tw instead.
+      document.getElementById("confirm-payment").hidden = false;
     }
 
     const state = document.getElementById("order-state");
     const texts = {
-      paid: "✅ Zaplaceno. Číslo objednávky " + order?.order_number + ", vyzvednutí v "
+      paid: "✅ Zaplaceno." + (order?.order_number ? " Číslo objednávky " + order.order_number + "," : "") + " Vyzvednutí v "
         + order?.target_time?.slice(-5) + ". Až bude připravená, přijde ti oznámení.",
-      ready: "🍳 Připraveno k vyzvednutí, číslo " + order?.order_number + ".",
-      closed: "✅ Objednávka " + order?.order_number + " je vyřízená.",
+      ready: "🍳 Připraveno k vyzvednutí" + (order?.order_number ? ", číslo " + order.order_number : "") + ".",
+      closed: "✅ Objednávka" + (order?.order_number ? " " + order.order_number : "") + " je vyřízená.",
       cancelled: "✖️ Objednávka byla zrušená. Můžeš objednat znovu, nebo otevřít výběr.",
     };
     state.hidden = !texts[stage];
     state.textContent = texts[stage] || "";
+    document.getElementById("reset-order").hidden = !order;
   }
 
   function loadPickupTimes() {
@@ -929,6 +970,11 @@
 
   document.getElementById("open-button").addEventListener("click", (event) =>
     adminAction(event.currentTarget, "api/admin/open", "Otevírám objednávání…"));
+  document.getElementById("reset-order").addEventListener("click", (event) => {
+    if (!confirm("Resetovat objednávku jen v doplňku? Na idingu se nic nezmění: objednávka tam zůstane, "
+      + "jak je, a doplněk ji přestane sledovat. Schválení se zruší, výběry zůstanou.")) return;
+    adminAction(event.currentTarget, "api/admin/reset_order", "Resetuji objednávku…");
+  });
   document.getElementById("clear-all").addEventListener("click", (event) => {
     if (!confirm("Smazat dnešní výběry všech strávníků? Každý bude vybírat znovu od začátku.")) return;
     adminAction(event.currentTarget, "api/admin/clear", "Mažu výběry…");

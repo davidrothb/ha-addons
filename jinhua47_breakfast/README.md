@@ -59,6 +59,12 @@ Správci vidí v horní liště ozubené kolečko a pod ním nastavují:
   musí si v účtu nastavit heslo. Heslo se uloží do `/data/settings.json` doplňku (je i v zálohách HA)
   a stránka ho už nikdy nezobrazí.
 
+## Fotky setů
+
+U setů se ukazuje náhled fotky. Vlastní fotky patří do složky [`photos/`](photos/), pojmenované podle
+setu (seznam názvů je v [`photos/README.md`](photos/README.md)). Mají přednost před fotkami z idingu,
+které mají zatím jen dva sety. Po přidání fotky zvyš `version` a doplněk aktualizuj.
+
 ## Lokální vývoj
 
 ```sh

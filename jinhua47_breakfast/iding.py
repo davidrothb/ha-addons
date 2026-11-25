@@ -205,7 +205,9 @@ def error_message(raw: bytes, reason: str) -> str:
     except ValueError:
         return reason or ""
     if isinstance(body, dict):
-        for key in ("message", "error", "msg", "detail"):
-            if body.get(key):
-                return str(body[key])
+        # iding puts its own error code in data.status (e.g. 1172, 5013); the message may be just "Server Error".
+        code = body.get("data", {}).get("status") if isinstance(body.get("data"), dict) else None
+        for key in ("message", "msg", "detail", "error"):
+            if body.get(key) and body[key] is not True:
+                return str(body[key]) + (f" (kód {code})" if code is not None else "")
     return json.dumps(body, ensure_ascii=False)[:200]

@@ -6,6 +6,9 @@ page needs and keeps the indexes; cart_items() turns saved choices back into
 iding cart items.
 """
 
+import re
+import unicodedata
+
 STORE = "af0f1c4c"
 
 SET_SUBCATEGORY = "套餐"
@@ -88,6 +91,12 @@ TEMPERATURE = ("溫度", {"iced": "冰", "hot": "溫"})
 SIZE = ("容量", {"small": "中", "large": "大"})
 
 
+def slug(label: str) -> str:
+    """"Nudle zhajiang, malé" -> "nudle-zhajiang-male": the file name of a set's own photo."""
+    ascii_text = unicodedata.normalize("NFKD", label).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]+", "-", ascii_text.lower()).strip("-")
+
+
 def build_menu(raw: dict, inventory: list | None = None) -> dict:
     """Sets and drinks from an /api/stores/menus response (+ /api/stores/inventories)."""
     menu = raw if "entrees" in raw else raw.get("data") or {}
@@ -96,6 +105,9 @@ def build_menu(raw: dict, inventory: list | None = None) -> dict:
     options = {o["index"]: o for o in menu.get("options", [])}
     items = {i["index"]: i for i in menu.get("option_items", [])}
     sold_out = {i.get("index") for i in inventory or [] if i.get("status") == -1}
+    photo_base = (menu.get("photo_url") or "").rstrip("/")
+    if not photo_base.startswith("https://"):
+        photo_base = ""
 
     def choice(entree: dict, spec: tuple) -> dict | None:
         """{key: {option, item, price} or None} for one option group; None without the group."""
@@ -145,10 +157,14 @@ def build_menu(raw: dict, inventory: list | None = None) -> dict:
                     "sold_out": drink_index in sold_out,
                 }
         main_index = main.get("default_entree_index")
+        label = SET_LABELS.get(combo["name"], combo["name"])
         sets.append({
             "index": index,
             "name": combo["name"],
-            "label": SET_LABELS.get(combo["name"], combo["name"]),
+            "label": label,
+            "slug": slug(label),
+            # The set's photo on iding (most sets have none); the add-on serves it, see App.photo.
+            "iding_photo": f"{photo_base}/{combo['photo']}" if photo_base and combo.get("photo") else None,
             "contents": contents(combo.get("photo_note")),
             "favorite": combo["name"] in FAVORITES,
             "price": combo.get("price") or 0,

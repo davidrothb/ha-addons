@@ -39,6 +39,10 @@ from iding import Iding, IdingError
 SUPERVISOR = "http://supervisor"
 INGRESS_PROXY_IP = "172.30.32.2"
 HERE = Path(__file__).parent
+# Own photos of the sets, named by set (photos/README.md); they win over iding's.
+PHOTOS_DIR = HERE / "photos"
+PHOTO_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
+PHOTO_MAX_BYTES = 5_000_000
 PAGE = HERE / "index.html"
 ADMIN_GROUP = "system-admin"
 CACHE_SECONDS = 60
@@ -212,6 +216,14 @@ def daily_assignment(today: date, kind: str, user_ids: tuple[str, ...], items: t
     return {user_id: items[index] for user_id, index in previous.items()}
 
 
+def is_paid(found: dict | None) -> bool:
+    """Whether an order from the iding history is paid: payment_status 2, or already past payment
+    (sent / ready / closed; an unpaid LINE Pay order shows order_status 101)."""
+    if not found:
+        return False
+    return found.get("payment_status") == 2 or found.get("order_status") in (ORDER_SENT, ORDER_READY, ORDER_CLOSED)
+
+
 class App:
     def __init__(self, dev: bool):
         # Bumped on every saved change; pages long-poll /api/wait to show it right away.
@@ -222,6 +234,8 @@ class App:
         data_dir.mkdir(exist_ok=True)
         self.settings_file = data_dir / "settings.json"
         self.menu_file = data_dir / "menu.json"  # last good menu, used while iding is down
+        self.photo_cache = data_dir / "photos"  # iding's set photos, downloaded once
+        self.photo_lock = threading.Lock()
         # Today's picks and the admin's approval: {"date", "choices": {user_id: ..}, "approved": {..} | None}
         self.choices_file = data_dir / "choices.json"
         stored_choices = json.loads(self.choices_file.read_text()) if self.choices_file.exists() else {}
@@ -273,8 +287,58 @@ class App:
                     raise
                 log(f"Menu se nenačetlo, používám uložené: {exc}")
                 result = {**cached, "stale": True}
+            for item in result["sets"]:
+                item["photo"] = self.photo_link(item)
             self._menu = (time.monotonic(), result)
             return result
+
+    # --- set photos ------------------------------------------------------------
+
+    @staticmethod
+    def own_photo(set_slug: str) -> Path | None:
+        """photos/<slug>.jpg (or .jpeg, .png, .webp) when there is one."""
+        if not set_slug:
+            return None
+        return next((PHOTOS_DIR / f"{set_slug}{ext}" for ext in PHOTO_TYPES
+                     if (PHOTOS_DIR / f"{set_slug}{ext}").is_file()), None)
+
+    def photo_link(self, item: dict) -> str | None:
+        """Relative URL of the set's photo for the page (own photo first, then iding's), or None.
+        The ?v= part changes with the picture, so browsers may cache each version for long."""
+        own = self.own_photo(item.get("slug", ""))
+        if own:
+            tag = f"{own.name}{own.stat().st_mtime_ns}"
+        elif item.get("iding_photo"):
+            tag = item["iding_photo"]
+        else:
+            return None
+        return f"photo/{item['index']}?v={hashlib.sha1(tag.encode()).hexdigest()[:10]}"
+
+    def photo(self, index: int) -> tuple[bytes, str] | None:
+        """(image bytes, content type) of a set's photo; iding's is downloaded on first use and kept."""
+        item = next((s for s in self.menu()["sets"] if s["index"] == index), None)
+        if not item:
+            return None
+        own = self.own_photo(item.get("slug", ""))
+        if own:
+            return own.read_bytes(), PHOTO_TYPES[own.suffix]
+        url = item.get("iding_photo")
+        if not url:
+            return None
+        ext = Path(url).suffix.lower() if Path(url).suffix.lower() in PHOTO_TYPES else ".jpg"
+        cached = self.photo_cache / f"{hashlib.sha1(url.encode()).hexdigest()}{ext}"
+        with self.photo_lock:
+            if not cached.is_file():
+                request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(request, timeout=15) as response:
+                    kind = response.headers.get_content_type()
+                    data = response.read(PHOTO_MAX_BYTES + 1)
+                if not kind.startswith("image/") or len(data) > PHOTO_MAX_BYTES:
+                    raise OSError(f"fotka {url} není obrázek do 5 MB ({kind}, {len(data)} B)")
+                self.photo_cache.mkdir(exist_ok=True)
+                cached.write_bytes(data)
+                log(f"Fotka setu {item['label']} stažená z idingu ({len(data) // 1024} kB).")
+        return cached.read_bytes(), PHOTO_TYPES[ext]
 
     # --- today's choices and the ticker -------------------------------------
 
@@ -333,18 +397,30 @@ class App:
             log(f"Seznam uživatelů se nenačetl, pozvánky neodešly: {exc}")
             return
         phones = self.settings["phones"]
+        sent, failed, skipped = [], [], []
         for user_id in self.settings["members"]:
             user, phone = users.get(user_id), phones.get(user_id)
-            if not user or not phone or user_id == opener_id:
+            if not user:
+                skipped.append(f"{user_id} (není v HA)")
+                continue
+            if user_id == opener_id:
+                skipped.append(f"{user['name']} (zahájil)")
+                continue
+            if not phone:
+                skipped.append(f"{user['name']} (nemá telefon)")
                 continue
             if self.settings.get("test_mode") and not user["is_admin"]:
+                skipped.append(f"{user['name']} (testovací režim)")
                 continue
             title = self.notification_message(user_id, user["name"])
             try:
-                self.send_notification(phone, "Klikni zde a objednej.", title=title)
-                log(f"Pozvánka pro {user['name']}: {title}")
-            except (urllib.error.URLError, OSError) as exc:
-                log(f"Pozvánka na notify.{phone} selhala: {exc}")
+                self.send_notification(phone, "Klikni zde a objednej.", title=title, who=f"pozvánka {user['name']}")
+                sent.append(user["name"])
+            except (urllib.error.URLError, OSError):
+                failed.append(user["name"])  # details logged by send_notification
+        log("Pozvánky: odesláno " + (", ".join(sent) or "nikomu")
+            + (f"; selhalo: {', '.join(failed)}" if failed else "")
+            + (f"; bez pozvánky: {', '.join(skipped)}" if skipped else "") + ".")
 
     def clear_choices(self) -> int:
         """Drop everyone's picks for today (before approval); returns how many there were."""
@@ -525,9 +601,13 @@ class App:
             start += timedelta(minutes=5)
         return {"day": day, "today": day == str(self.today()), "times": times}
 
-    def set_order(self, **changes) -> dict:
+    def set_order(self, only_id=None, **changes) -> dict:
+        """Merge changes into today's order; with only_id, only while that order is still today's
+        (the watcher must not bring back an order reset or replaced meanwhile), else {}."""
         with self.lock:
             self.choices()
+            if only_id is not None and (self.order or {}).get("id") != only_id:
+                return {}
             self.order = {**(self.order or {}), **changes}
             self.save_choices()
             return dict(self.order)
@@ -606,20 +686,44 @@ class App:
         return order
 
     def confirm_payment(self) -> None:
-        """After the admin approved the payment in LINE: finish it on iding."""
-        order = self.current_order(("awaiting_payment",))
-        result = self.with_iding(lambda client: client.line_pay_confirm(
-            menu.STORE, order["item_name"], order["bank_transaction_id"]))
+        """After the admin paid: mark the order paid, finishing the LINE Pay payment on iding if needed.
+
+        The order on iding is checked first: when it was paid some other way (e.g. on iding.tw
+        in a browser after the first LINE Pay attempt failed), our LINE Pay transaction is stale
+        and confirming it would only fail.
+        """
+        order = self.current_order(("ordered", "awaiting_payment"))
+        found = self.with_iding(lambda client: client.order_status(order["id"]))
+        log(f"Objednávka {order['id']} na idingu: " + (
+            f"order_status {found.get('order_status')}, payment_status {found.get('payment_status')}."
+            if found else "nenalezena v historii."))
+        if is_paid(found):
+            self.mark_paid(found.get("order_number"), found.get("order_status"))
+            return
+        if not order.get("bank_transaction_id"):
+            raise IdingError("Objednávka na idingu ještě není zaplacená. Dej „Nový odkaz na platbu“ a zaplať.")
+        try:
+            result = self.with_iding(lambda client: client.line_pay_confirm(
+                menu.STORE, order["item_name"], order["bank_transaction_id"]))
+        except IdingError as exc:
+            raise IdingError(
+                f"LINE Pay platbu nedokončil ({exc}). Tahle platba asi neprošla nebo vypršela: dej "
+                "„Nový odkaz na platbu“ a zaplať znovu. Jestli jsi už zaplatil jinde (na iding.tw), "
+                "zkus to za chvíli znovu, doplněk to pozná i sám do minuty."
+            ) from exc
         log(f"Dokončení platby {order['id']}: payment_status {result.get('payment_status')}, "
             f"order_status {result.get('order_status')}, číslo {result.get('order_number')}.")
         if result.get("payment_status") != 2:
             raise IdingError(f"Platba zatím není zaplacená (stav {result.get('payment_status')}). "
                              "Schval ji v LINE a zkus to znovu.")
-        order = self.set_order(stage="paid", order_number=result.get("order_number"), status=result.get("order_status"))
+        self.mark_paid(result.get("order_number"), result.get("order_status"))
+
+    def mark_paid(self, order_number, status) -> None:
+        order = self.current_order(("ordered", "awaiting_payment"))
+        order = self.set_order(stage="paid", order_number=order_number or order.get("order_number"), status=status)
         log(f"Objednávka {order['id']} zaplacena, číslo {order['order_number']}.")
-        self.notify_orderer(
-            order, f"Zaplaceno ✓ Číslo objednávky {order['order_number']}, vyzvednutí v {order['target_time'][-5:]}."
-        )
+        number = f" Číslo objednávky {order['order_number']}." if order.get("order_number") else ""
+        self.notify_orderer(order, f"Zaplaceno ✓.{number} Vyzvednutí v {order['target_time'][-5:]}.")
 
     def cancel_order(self) -> None:
         """Cancel a sent but unpaid order on iding."""
@@ -628,32 +732,71 @@ class App:
         self.set_order(stage="cancelled")
         log(f"Objednávka {order['id']} zrušena.")
 
+    def reset_order(self, by: str) -> None:
+        """Forget today's order in the add-on only, whatever its state on iding (nothing is sent there).
+
+        For when the add-on is stuck (e.g. a payment that iding will no longer confirm and an
+        order the store will not cancel). The approval is dropped too, so the picks stay but are
+        unlocked; the watcher stops following the old order."""
+        with self.lock:
+            self.choices()
+            order = self.order
+            self.order = None
+            self.approved = None
+            self.save_choices()
+        if order:
+            log(f"{by} resetoval objednávku v doplňku (iding {order.get('id')}, stav {order.get('stage')}, "
+                f"číslo {order.get('order_number') or '–'}); na idingu se nic nezměnilo.")
+        else:
+            log(f"{by} resetoval objednávku v doplňku (žádná nebyla).")
+
     def order_watch_loop(self) -> None:
-        """Every minute check a paid order on iding; tell the orderer once it is ready for pickup."""
+        """Every minute check today's order on iding: an unpaid one that got paid elsewhere (iding.tw)
+        becomes paid; a paid one notifies the orderer once it is ready for pickup."""
         while True:
             time.sleep(ORDER_WATCH_SECONDS)
             with self.lock:
                 self.choices()
                 order = dict(self.order or {})
-            if order.get("stage") not in ("paid", "ready"):
+            if order.get("stage") not in ("ordered", "awaiting_payment", "paid", "ready"):
                 continue
             try:
                 found = self.with_iding(lambda client: client.order_status(order["id"]))
             except IdingError as exc:
                 log(f"Stav objednávky se nepodařilo zjistit: {exc}")
                 continue
+            if order["stage"] in ("ordered", "awaiting_payment"):
+                if is_paid(found):
+                    log(f"Objednávka {order['id']} je na idingu zaplacená (order_status {found.get('order_status')}, "
+                        f"payment_status {found.get('payment_status')}).")
+                    try:
+                        self.mark_paid(found.get("order_number"), found.get("order_status"))
+                    except IdingError:
+                        pass  # the admin confirmed it meanwhile
+                elif (found or {}).get("order_status") == ORDER_CANCELLED:
+                    order = self.set_order(only_id=order["id"], stage="cancelled", status=ORDER_CANCELLED)
+                    if order:
+                        self.notify_orderer(order, "Nezaplacená objednávka byla na idingu zrušená.")
+                continue
             status = (found or {}).get("order_status")
             if status != order.get("status"):
                 log(f"Objednávka {order['id']} má na idingu stav {status}" + ("" if found else " (nenalezena)") + ".")
-                order = self.set_order(status=status)  # log each change once, not every minute
+                order = self.set_order(only_id=order["id"], status=status)  # log each change once, not every minute
+                if not order:
+                    continue  # reset or replaced meanwhile
             if status in (ORDER_READY, ORDER_CLOSED) and order["stage"] == "paid":
-                order = self.set_order(stage="ready" if status == ORDER_READY else "closed", status=status)
-                self.notify_orderer(order, f"Snídaně je připravená k vyzvednutí (číslo {order['order_number']}).")
+                order = self.set_order(only_id=order["id"], stage="ready" if status == ORDER_READY else "closed",
+                                       status=status)
+                if order:
+                    self.notify_orderer(order, "Snídaně je připravená k vyzvednutí"
+                                        + (f" (číslo {order['order_number']})." if order.get("order_number") else "."))
             elif status == ORDER_CLOSED:
-                self.set_order(stage="closed", status=status)
+                self.set_order(only_id=order["id"], stage="closed", status=status)
             elif status == ORDER_CANCELLED:
-                order = self.set_order(stage="cancelled", status=status)
-                self.notify_orderer(order, f"Obchod objednávku {order['order_number']} zrušil.")
+                order = self.set_order(only_id=order["id"], stage="cancelled", status=status)
+                if order:
+                    self.notify_orderer(order, "Obchod objednávku zrušil"
+                                        + (f" (číslo {order['order_number']})." if order.get("order_number") else "."))
 
     def notify_orderer(self, order: dict, message: str, url: str | None = None) -> None:
         """Progress goes only to the admin who placed the order, on their phone."""
@@ -662,10 +805,9 @@ class App:
             log(f"{order.get('by')} nemá telefon, oznámení se neposlalo: {message}")
             return
         try:
-            self.send_notification(phone, message, url=url)
-            log(f"Oznámení pro {order.get('by')}: {message}")
-        except (urllib.error.URLError, OSError) as exc:
-            log(f"Oznámení na notify.{phone} selhalo: {exc}")
+            self.send_notification(phone, message, url=url, who=f"objednávka {order.get('by')}")
+        except (urllib.error.URLError, OSError):
+            pass  # logged by send_notification
 
     def check_choice(self, body: dict) -> tuple[dict | None, str]:
         """(choice, "") when set, drink, temperature and size exist on today's menu, else (None, error)."""
@@ -759,10 +901,9 @@ class App:
             self.save_choices()
         for name, phone, message in to_send:
             try:
-                self.send_notification(phone, message)
-                log(f"Správce {name} upozorněn: {message}")
-            except (urllib.error.URLError, OSError) as exc:
-                log(f"Upozornění správce na notify.{phone} selhalo: {exc}")
+                self.send_notification(phone, message, who=f"správce {name}")
+            except (urllib.error.URLError, OSError):
+                pass  # logged by send_notification
 
     def ticker(self) -> list[dict]:
         """One entry per member for the scrolling bar: emoji, name and a phrase by status."""
@@ -884,9 +1025,10 @@ class App:
             if self.settings.get("test_mode") and user_id not in admins:
                 continue  # test mode: nobody but the admins hears from the add-on
             try:
-                self.send_notification(service, self.notification_message(user_id, names.get(user_id, "")))
-            except (urllib.error.URLError, OSError) as exc:
-                log(f"Denní oznámení na notify.{service} selhalo: {exc}")
+                self.send_notification(service, self.notification_message(user_id, names.get(user_id, "")),
+                                       who=f"denní {names.get(user_id, user_id)}")
+            except (urllib.error.URLError, OSError):
+                pass  # logged by send_notification
         log("Denní oznámení odeslána.")
 
     def save_settings(self) -> None:
@@ -967,18 +1109,32 @@ class App:
         )
 
     def send_notification(self, service: str, message: str, url: str | None = None,
-                          title: str = "Jinhua47 Snídaně") -> None:
-        """Tapping opens `url` (e.g. the LINE Pay link), by default the add-on panel in the Companion app."""
+                          title: str = "Jinhua47 Snídaně", who: str = "") -> None:
+        """Tapping opens `url` (e.g. the LINE Pay link), by default the add-on panel in the Companion app.
+
+        Every notification is logged with its recipient, text and link, and whether Home Assistant
+        accepted it; a failure is logged and then raised to the caller."""
         target = url or self.panel_path
         payload = {
             "title": title,
             "message": message,
             "data": {"url": target, "clickAction": target} if target else {},
         }
+        recipient = f"{who} (notify.{service})" if who else f"notify.{service}"
+        log(f"Oznámení → {recipient}: „{title}“ / „{message}“, odkaz {target or '–'}")
         if self.dev:
-            log(f"[dev] notify.{service}: {json.dumps(payload, ensure_ascii=False)}")
+            log(f"[dev] {recipient}: neposláno (dev režim)")
             return
-        supervisor_call("POST", f"/core/api/services/notify/{service}", payload)
+        try:
+            supervisor_call("POST", f"/core/api/services/notify/{service}", payload)
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode(errors="replace")[:300]
+            log(f"Oznámení → {recipient}: Home Assistant odmítl (HTTP {exc.code}): {body}")
+            raise
+        except (urllib.error.URLError, OSError) as exc:
+            log(f"Oznámení → {recipient}: selhalo: {exc}")
+            raise
+        log(f"Oznámení → {recipient}: Home Assistant přijal ✓")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1013,6 +1169,25 @@ class Handler(BaseHTTPRequestHandler):
         user = self.header_user()
         known = self.app.user(user["id"]) or {}
         return {**user, "is_admin": known.get("is_admin", False)}
+
+    def get_photo(self, index: str) -> None:
+        """A set's photo (anyone who reaches the add-on through Ingress; they are not personal)."""
+        try:
+            found = self.app.photo(int(index)) if index.isdigit() else None
+        except (IdingError, urllib.error.URLError, OSError) as exc:
+            log(f"Fotku setu {index} nejde načíst: {exc}")
+            self.send_error(502)
+            return
+        if not found:
+            self.send_error(404)
+            return
+        data, kind = found
+        self.send_response(200)
+        self.send_header("Content-Type", kind)
+        self.send_header("Cache-Control", "private, max-age=604800")  # the URL changes with the picture
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def send_json(self, status: int, body) -> None:
         data = json.dumps(body, ensure_ascii=False).encode()
@@ -1069,6 +1244,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
+        elif route.startswith("/photo/"):
+            self.get_photo(route.removeprefix("/photo/"))
         elif route == "/api/me":
             self.guarded(self.get_me)
         elif route == "/api/status":
@@ -1111,6 +1288,8 @@ class Handler(BaseHTTPRequestHandler):
             self.guarded(lambda user: self.order_action(user, self.app.retry_payment), admin=True)
         elif route == "/api/admin/confirm_payment":
             self.guarded(lambda user: self.order_action(user, self.app.confirm_payment), admin=True)
+        elif route == "/api/admin/reset_order":
+            self.guarded(lambda user: self.order_action(user, lambda: self.app.reset_order(user["name"])), admin=True)
         elif route == "/api/admin/cancel_order":
             self.guarded(lambda user: self.order_action(user, self.app.cancel_order), admin=True)
         elif route == "/api/admin/test_notify":
@@ -1235,6 +1414,8 @@ class Handler(BaseHTTPRequestHandler):
         log(f"{user['name']} zahájil objednávání.")
         if invite:  # in the background: a slow phone must not hold up the page
             threading.Thread(target=self.app.invite_members, args=(user["id"],), daemon=True).start()
+        else:
+            log("Pozvánky se dnes už posílaly, znovu se neposílají.")
         self.get_order(user)
 
     def post_clear(self, user: dict) -> None:
@@ -1407,7 +1588,8 @@ class Handler(BaseHTTPRequestHandler):
         if service not in {p["service"] for p in self.app.phones()}:
             self.send_json(400, {"error": f"Telefon notify.{service} v Home Assistantu není."})
             return
-        self.app.send_notification(service, self.app.notification_message(target["id"], target["name"]))
+        self.app.send_notification(service, self.app.notification_message(target["id"], target["name"]),
+                                   who=f"test {target['name']}")
         self.send_json(200, {"ok": True, "service": f"notify.{service}"})
 
 
