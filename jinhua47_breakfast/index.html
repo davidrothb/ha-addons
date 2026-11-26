@@ -455,6 +455,15 @@
     for (const phone of phones) select.append(new Option(phone.label, phone.service));
     select.value = user.phone || "";
 
+    const alert = document.createElement("select");
+    alert.className = "alert-level";
+    alert.append(
+      new Option("Normální", ""),
+      new Option("Důrazné (přijde hned)", "high"),
+      new Option("Budík (zvoní i potichu)", "alarm"),
+    );
+    alert.value = user.alert || "";
+
     const nicknames = document.createElement("textarea");
     nicknames.rows = 2;
     nicknames.placeholder = "Bez přezdívky se použije jméno";
@@ -468,7 +477,7 @@
       test.disabled = true;
       show(status, "", "Odesílám…");
       try {
-        const body = await post("api/admin/test_notify", { user_id: user.id, phone: select.value });
+        const body = await post("api/admin/test_notify", { user_id: user.id, phone: select.value, alert: alert.value });
         show(status, "ok", "Odesláno na " + body.service + ".");
       } catch (err) {
         show(status, "err", err.message);
@@ -477,7 +486,7 @@
       }
     });
 
-    row.append(head, field("Telefon", select), field("Přezdívky", nicknames), status);
+    row.append(head, field("Telefon", select), field("Oznámení", alert), field("Přezdívky", nicknames), status);
     return row;
   }
 
@@ -568,6 +577,7 @@
     for (const row of document.querySelectorAll("#users .user")) {
       users[row.dataset.user] = {
         phone: row.querySelector("select").value,
+        alert: row.querySelector("select.alert-level").value,
         nicknames: lines(row.querySelector("textarea").value),
       };
     }
@@ -912,9 +922,12 @@
     document.getElementById("reset-order").hidden = !order;
   }
 
-  function loadPickupTimes() {
+  // The offered times move on with the clock and depend on the order size: reloaded every minute
+  // while the form is shown and after a failed order, keeping the pick when it is still offered.
+  function loadPickupTimes(quiet = false) {
     pickupLoaded = true;
-    pickupSelect.replaceChildren(new Option("Načítám časy…", ""));
+    const previous = pickupSelect.value;
+    if (!quiet) pickupSelect.replaceChildren(new Option("Načítám časy…", ""));
     api("api/admin/pickup_times").then((data) => {
       if (!data.times.length) {
         pickupSelect.replaceChildren(new Option("Obchod teď nenabízí žádný čas", ""));
@@ -924,6 +937,7 @@
       const day = data.today ? "" : " (" + d + ". " + m + ".)";
       pickupSelect.replaceChildren(...data.times.map((t, i) =>
         new Option((i === 0 ? "Co nejdřív – " : "") + t + day, data.day + " " + t)));
+      if (previous && [...pickupSelect.options].some((o) => o.value === previous)) pickupSelect.value = previous;
     }).catch((err) => {
       pickupLoaded = false;
       pickupSelect.replaceChildren(new Option("Časy se nenačetly", ""));
@@ -937,8 +951,10 @@
     const total = document.getElementById("order-total").textContent;
     const label = pickupSelect.selectedOptions[0].text.replace("Co nejdřív – ", "");
     if (!confirm("Objednat za " + total + " s vyzvednutím v " + label + " a zaplatit přes LINE Pay?")) return;
-    adminAction(event.currentTarget, "api/admin/order", "Odesílám objednávku…", { target_time: when });
+    adminAction(event.currentTarget, "api/admin/order", "Odesílám objednávku…", { target_time: when })
+      .then(() => { if (!orderForm.hidden) loadPickupTimes(true); });
   });
+  setInterval(() => { if (pickupLoaded && !orderForm.hidden) loadPickupTimes(true); }, 60000);
   document.getElementById("confirm-payment").addEventListener("click", (event) =>
     adminAction(event.currentTarget, "api/admin/confirm_payment", "Ověřuji platbu…"));
   document.getElementById("pay-again").addEventListener("click", (event) =>

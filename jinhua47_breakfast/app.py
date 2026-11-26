@@ -39,6 +39,14 @@ from iding import Iding, IdingError
 SUPERVISOR = "http://supervisor"
 INGRESS_PROXY_IP = "172.30.32.2"
 HERE = Path(__file__).parent
+# Extra notification data per level (Companion app): "high" is delivered at once even when the phone
+# saves power (Android priority/ttl, iOS time-sensitive); "alarm" also rings on Android's alarm
+# channel, so it sounds even when the phone is silenced.
+ALERT_DATA = {
+    "high": {"ttl": 0, "priority": "high", "push": {"interruption-level": "time-sensitive"}},
+    "alarm": {"ttl": 0, "priority": "high", "channel": "alarm_stream",
+              "push": {"interruption-level": "time-sensitive"}},
+}
 # Own photos of the sets, named by set (photos/README.md); they win over iding's. First the add-on's
 # config folder in Home Assistant (/addon_configs/<slug>/photos, uploaded there, not on GitHub),
 # then the ones shipped with the add-on.
@@ -67,6 +75,8 @@ DEFAULT_SETTINGS = {
     "members": [],  # Home Assistant user ids taking part, in the order the admin added them
     "phones": {},
     "nicknames": {},
+    # {user_id: "high" | "alarm"}: stronger notifications on that member's phone (default normal).
+    "alerts": {},
     "iding": {"phone": "", "password": ""},
     "daily_notification_time": "07:00",
     "notification_phrases": [
@@ -561,7 +571,7 @@ class App:
             "warning": "",
         }
         try:  # a price check is a bonus: the cart is already filled
-            target = client.first_pickup_time(menu.STORE)
+            target = client.first_pickup_time(menu.STORE, our_total)
             if not target:
                 result["warning"] = "Obchod teď nenabízí žádný čas vyzvednutí, cenu iding nepotvrdil."
             else:
@@ -607,8 +617,12 @@ class App:
                     self._iding = None  # expired session: log in and try once more
 
     def pickup_times(self) -> dict:
-        """Times offered for pickup on the first day the store takes orders, every 5 minutes."""
-        windows = Iding().pickup_windows(menu.STORE)
+        """Times offered for pickup of the approved order on the first day the store takes orders,
+        every 5 minutes. They depend on the order total: a bigger order gets later times."""
+        with self.lock:
+            self.choices()
+            total = (self.approved or {}).get("our_total") or 0
+        windows = Iding().pickup_windows(menu.STORE, total)
         if not windows:
             return {"day": None, "today": False, "times": []}
         day, first, last = windows[0]
@@ -1168,20 +1182,28 @@ class App:
             key=lambda p: p["label"].lower(),
         )
 
+    def alert_level(self, service: str) -> str:
+        """The strongest level set for the members on this phone ("alarm", "high" or "")."""
+        alerts = self.settings.get("alerts", {})
+        levels = {alerts.get(uid, "") for uid, phone in self.settings["phones"].items() if phone == service}
+        return next((level for level in ("alarm", "high") if level in levels), "")
+
     def send_notification(self, service: str, message: str, url: str | None = None,
-                          title: str = "Jinhua47 Snídaně", who: str = "") -> None:
+                          title: str = "Jinhua47 Snídaně", who: str = "", level: str | None = None) -> None:
         """Tapping opens `url` (e.g. the LINE Pay link), by default the add-on panel in the Companion app.
 
         Every notification is logged with its recipient, text and link, and whether Home Assistant
         accepted it; a failure is logged and then raised to the caller."""
         target = url or self.panel_path
+        level = self.alert_level(service) if level is None else level  # level: the test uses the form's
         payload = {
             "title": title,
             "message": message,
-            "data": {"url": target, "clickAction": target} if target else {},
+            "data": {**({"url": target, "clickAction": target} if target else {}), **ALERT_DATA.get(level, {})},
         }
         recipient = f"{who} (notify.{service})" if who else f"notify.{service}"
-        log(f"Oznámení → {recipient}: „{title}“ / „{message}“, odkaz {target or '–'}")
+        log(f"Oznámení → {recipient}: „{title}“ / „{message}“, odkaz {target or '–'}"
+            + (f", důraz {level}" if level in ALERT_DATA else ""))
         if self.dev:
             log(f"[dev] {recipient}: neposláno (dev režim)")
             return
@@ -1506,8 +1528,16 @@ class Handler(BaseHTTPRequestHandler):
         def place() -> None:
             offered = self.app.pickup_times()
             if not offered["day"] or when not in {f"{offered['day']} {t}" for t in offered["times"]}:
-                raise IdingError("Tenhle čas vyzvednutí obchod nenabízí, vyber jiný.")
-            self.app.place_order(user, when)
+                first = offered["times"][0] if offered["times"] else ""
+                raise IdingError("Tenhle čas už obchod nenabízí" + (f", nejdřív teď {first}" if first else "")
+                                 + ". Časy jsou obnovené, vyber znovu.")
+            try:
+                self.app.place_order(user, when)
+            except IdingError as exc:
+                if "kód 2128" not in str(exc):  # 訂單準備時間不足: not enough time to prepare the order
+                    raise
+                raise IdingError("Obchod na tuhle objednávku potřebuje víc času na přípravu. "
+                                 "Časy jsou obnovené, vyber pozdější.") from exc
 
         self.order_action(user, place)
 
@@ -1535,6 +1565,7 @@ class Handler(BaseHTTPRequestHandler):
                     "missing": user_id not in ha_users,
                     "phone": app.settings["phones"].get(user_id),
                     "nicknames": app.settings["nicknames"].get(user_id, []),
+                    "alert": app.settings.get("alerts", {}).get(user_id, ""),
                 }
                 for user_id in members
             ],
@@ -1613,6 +1644,7 @@ class Handler(BaseHTTPRequestHandler):
         """
         settings = self.app.settings
         phones, nicknames = settings["phones"], settings["nicknames"]
+        alerts = settings.setdefault("alerts", {})
         if not isinstance(body, dict):
             return
         allowed = valid_users | set(settings["members"])
@@ -1620,6 +1652,7 @@ class Handler(BaseHTTPRequestHandler):
         for gone in set(settings["members"]) - set(members):
             phones.pop(gone, None)
             nicknames.pop(gone, None)
+            alerts.pop(gone, None)
         settings["members"] = members
         for user_id in members:
             entry = body[user_id]
@@ -1633,6 +1666,10 @@ class Handler(BaseHTTPRequestHandler):
                 nicknames[user_id] = names
             else:
                 nicknames.pop(user_id, None)
+            if entry.get("alert") in ALERT_DATA:
+                alerts[user_id] = entry["alert"]
+            else:
+                alerts.pop(user_id, None)
 
     def post_test_notify(self, user: dict) -> None:
         """Send a user's notification of the day to the phone picked in the form (saved or not)."""
@@ -1649,7 +1686,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(400, {"error": f"Telefon notify.{service} v Home Assistantu není."})
             return
         self.app.send_notification(service, self.app.notification_message(target["id"], target["name"]),
-                                   who=f"test {target['name']}")
+                                   who=f"test {target['name']}", level=str(body.get("alert") or ""))
         self.send_json(200, {"ok": True, "service": f"notify.{service}"})
 
 

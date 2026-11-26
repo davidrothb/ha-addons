@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.15.1
+
+- Oprava časů vyzvednutí u větších objednávek: doplněk se na časy ptá s cenou schválené objednávky jako
+  web idingu. Na větší objednávku obchod potřebuje víc času a první čas je pozdější; dřív doplněk nabízel
+  časy pro nejmenší objednávku a iding je odmítal (訂單準備時間不足, kód 2128).
+- Nabídka časů se obnovuje každou minutu a po neúspěšné objednávce; vybraný čas zůstane, pokud ho obchod
+  pořád nabízí. Chyba 2128 i prošlý čas mají srozumitelnou hlášku.
+- U každého strávníka v nastavení volba „Oznámení“: Normální, Důrazné (přijde hned i v úsporném režimu
+  telefonu: `priority: high`, `ttl: 0`, na iPhonu time-sensitive) a Budík (navíc kanál `alarm_stream`, na
+  Androidu zvoní i v tichém režimu). Platí pro všechna oznámení na jeho telefon; tlačítko Test použije
+  vybranou úroveň i bez uložení. Úroveň je vidět i v logu („důraz alarm“).
+- Ikona a logo doplňku (logo 金華47) v seznamu doplňků a na stránce doplňku v Home Assistantu.
+
 ## 0.15.0
 
 - Události v Home Assistantu pro automatizace při každé změně stavu objednávky:

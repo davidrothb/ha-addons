@@ -88,9 +88,12 @@ class Iding:
         result = self.call("GET", f"/api/stores/inventories?identifier={store}")
         return result if isinstance(result, list) else []
 
-    def pickup_windows(self, store: str) -> list[tuple[str, str, str]]:
-        """Take-out windows the store offers as (day, first, last), e.g. ("2026-11-24", "10:25", "12:44")."""
-        result = self.call("POST", "/api/stores/avail_times", {"data": {"identifier": store, "total": 0}}) or {}
+    def pickup_windows(self, store: str, total: int = 0) -> list[tuple[str, str, str]]:
+        """Take-out windows the store offers as (day, first, last), e.g. ("2026-11-24", "10:25", "12:44").
+
+        total is the cart total in NT$, as the site sends it: a bigger order needs longer to prepare,
+        so the first time comes later (0 gives the times for the smallest order)."""
+        result = self.call("POST", "/api/stores/avail_times", {"data": {"identifier": store, "total": total}}) or {}
         windows = []
         for slot in result.get("0") or []:  # order type 0 = take-out; "2026-11-24#10:25#12:44"
             day, first, last, *_ = f"{slot}###".split("#")
@@ -98,9 +101,9 @@ class Iding:
                 windows.append((day, first, last))
         return windows
 
-    def first_pickup_time(self, store: str) -> str | None:
-        """The earliest take-out time the store offers, as "YYYY-MM-DD HH:MM"."""
-        windows = self.pickup_windows(store)
+    def first_pickup_time(self, store: str, total: int = 0) -> str | None:
+        """The earliest take-out time the store offers for a cart of total NT$, as "YYYY-MM-DD HH:MM"."""
+        windows = self.pickup_windows(store, total)
         return f"{windows[0][0]} {windows[0][1]}" if windows else None
 
     def cart(self, store: str) -> list[dict]:
