@@ -34,6 +34,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import menu
+import tv
 from iding import Iding, IdingError
 from settleup import SettleUp, SettleUpError
 
@@ -1179,6 +1180,138 @@ class App:
             })
         return entries
 
+    # --- Home Assistant: sensor and TV dashboard ----------------------------------
+
+    def ha_state(self) -> dict:
+        """State and attributes of sensor.jinhua47_breakfast (what the TV dashboard shows).
+
+        State: idle (ordering not started), choosing, approved, or the stage of today's order
+        (ordered, awaiting_payment, paid, ready, closed, cancelled). No timestamps among the
+        attributes, so re-sending an unchanged state does not show up as a change in Home Assistant."""
+        try:
+            names = {u["id"]: u["name"] for u in self.users()}
+        except (OSError, RuntimeError):
+            names = {}
+        try:
+            page_menu = self.menu()
+        except IdingError:
+            page_menu = None
+        with self.lock:
+            choices = dict(self.choices())
+            approved = dict(self.approved or {})
+            opened = self.opened
+            order = dict(self.order or {})
+            earlier = [dict(o) for o in self.earlier_orders if o.get("stage") in ("paid", "ready")]
+        members = [m for m in self.settings["members"] if m in names or not names]
+        picks, pending, groups = [], [], {}
+        for user_id in members:
+            name = names.get(user_id, user_id)
+            choice = choices.get(user_id)
+            if not choice:
+                pending.append(name)
+                continue
+            text = menu.describe(page_menu, choice)["text"] if page_menu else ""
+            picks.append({"name": name, "text": text})
+            group = groups.setdefault(text, {"text": text, "quantity": 0})
+            group["quantity"] += 1
+        if order.get("stage"):
+            state = order["stage"]
+        elif approved:
+            state = "approved"
+        elif opened:
+            state = "choosing"
+        else:
+            state = "idle"
+        pickup = (order.get("target_time") or "")[-5:]
+        number = order.get("order_number") or ""
+        detail = {
+            "idle": "",
+            "choosing": f"Vybráno {len(picks)} z {len(members)}" + (f" · od {opened['at']}" if opened else ""),
+            "approved": "Čeká se na odeslání objednávky",
+            "ordered": f"Vyzvednutí v {pickup}",
+            "awaiting_payment": f"Vyzvednutí v {pickup}",
+            "paid": (f"Číslo {number} · " if number else "") + f"vyzvednutí v {pickup}",
+            "ready": f"Číslo {number}" if number else "",
+            "closed": "",
+            "cancelled": "",
+        }.get(state, "")
+        if self.settings.get("test_mode"):
+            detail = (detail + " · " if detail else "") + "testovací režim"
+        emoji, headline = tv.HEADLINES.get(state, ("🥐", "Snídaně"))
+        earlier_texts = [{
+            "order_number": o.get("order_number") or "",
+            "stage": o["stage"],
+            "pickup_time": (o.get("target_time") or "")[-5:],
+            "text": f"Dřívější kolo{' č. ' + str(o['order_number']) if o.get('order_number') else ''}: "
+                    + ("připraveno k vyzvednutí 🎉" if o["stage"] == "ready"
+                       else f"zaplaceno, vyzvednutí v {(o.get('target_time') or '')[-5:]}"),
+        } for o in earlier]
+        return {
+            "state": state,
+            "attributes": {
+                "friendly_name": "Snídaně",
+                "icon": "mdi:food-croissant",
+                "emoji": emoji,
+                "headline": headline,
+                "detail": detail,
+                "test_mode": bool(self.settings.get("test_mode")),
+                "opened_at": (opened or {}).get("at", ""),
+                "member_count": len(members),
+                "chosen_count": len(picks),
+                "picks": picks,
+                "pending": pending,
+                "groups": sorted(groups.values(), key=lambda g: (-g["quantity"], g["text"])),
+                "items": order.get("items") or approved.get("items") or len(picks),
+                "total": order.get("total") or approved.get("our_total") or 0,
+                "pickup_time": pickup,
+                "order_number": number,
+                "ordered_by": order.get("by") or "",
+                "earlier": earlier_texts,
+                "tip": (self.settings.get("daily_tip") or "").strip(),
+            },
+        }
+
+    def ha_state_loop(self) -> None:
+        """Keep sensor.jinhua47_breakfast up to date: right after each change, and every minute
+        (Home Assistant forgets such a sensor when it restarts; this brings it back)."""
+        seen, last, failing = None, None, False
+        while True:
+            version = self.wait_for_change(seen, tv.STATE_REFRESH_SECONDS) if seen is not None else self.version
+            if version != seen:
+                time.sleep(1)  # let a burst of changes (e.g. approve + save) settle into one update
+            seen = self.version
+            body = self.ha_state()
+            if self.dev:
+                if body != last:
+                    log(f"[dev] {tv.ENTITY_ID} → {body['state']}: {json.dumps(body['attributes'], ensure_ascii=False)}")
+                last = body
+                continue
+            try:
+                supervisor_call("POST", f"/core/api/states/{tv.ENTITY_ID}", body)
+            except (urllib.error.URLError, OSError) as exc:
+                if not failing:
+                    log(f"{tv.ENTITY_ID} se nepodařilo zapsat (zkouším dál každou minutu): {exc}")
+                failing = True
+                continue
+            if failing or last is None:
+                log(f"{tv.ENTITY_ID} zapsán ({body['state']}).")
+            failing, last = False, body
+
+    def ensure_tv_dashboard(self) -> None:
+        """Create the "Snídaně TV" dashboard; Home Assistant may still be starting, so try a few times."""
+        if self.dev:
+            log(f"[dev] Dashboard /{tv.DASHBOARD_PATH}: nezakládám (dev režim).")
+            return
+        for attempt in range(1, 11):
+            try:
+                tv.ensure_dashboard(websocket_commands, log)
+                return
+            except (OSError, RuntimeError) as exc:
+                if attempt == 10:
+                    log(f"Dashboard /{tv.DASHBOARD_PATH} se nepodařilo založit: {exc}")
+                    return
+                time.sleep(30)
+
     def startup(self) -> None:
         if self.dev:
             return
@@ -1964,6 +2097,8 @@ def main() -> None:
     app.startup()
     threading.Thread(target=keep_running(app.daily_loop), daemon=True).start()
     threading.Thread(target=keep_running(app.order_watch_loop), daemon=True).start()
+    threading.Thread(target=keep_running(app.ha_state_loop), daemon=True).start()
+    threading.Thread(target=app.ensure_tv_dashboard, daemon=True).start()
     Handler.app = app
     host = args.host or ("127.0.0.1" if args.dev else "0.0.0.0")
     server = ThreadingHTTPServer((host, args.port), Handler)

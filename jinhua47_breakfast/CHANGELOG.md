@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.18.0
+
+- Entita `sensor.jinhua47_breakfast` se stavem dnešní objednávky (`idle`, `choosing`, `approved`,
+  `ordered`, `awaiting_payment`, `paid`, `ready`, `closed`, `cancelled`). V atributech je nadpis
+  a podrobnosti pro zobrazení, kdo má vybráno a co, kdo ještě ne, souhrn objednávky, čas vyzvednutí,
+  číslo objednávky, dřívější kola a tip dne. Mění se hned při každé změně, nejpozději do minuty
+  (i po restartu Home Assistantu).
+- Dashboard **Snídaně TV** (`/snidane-tv`, pohled `stav`) pro castování na Chromecast. Doplněk ho při
+  startu sám založí a při změně rozvržení v nové verzi přepíše. Ručně upravený dashboard (bez klíče
+  `jinhua47_breakfast_layout`) nechá být.
+
 ## 0.17.0
 
 - Integrace se Settle Up: po zaplacení se objednávka zapíše jako útrata do vybrané skupiny. Platí ten,

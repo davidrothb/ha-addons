@@ -116,6 +116,30 @@ automation:
 Vyzkoušet jde i bez objednávky: Vývojářské nástroje → Události → odeslat např.
 `jinhua47_breakfast_paid` s daty `{"total": 190, "pickup_time": "08:30"}`.
 
+## Dashboard na TV
+
+Doplněk udržuje entitu `sensor.jinhua47_breakfast` a při startu sám založí dashboard **Snídaně TV**
+(`/snidane-tv`, v postranním panelu), určený k castování na Chromecast:
+
+```yaml
+action: cast.show_lovelace_view
+data:
+  entity_id: media_player.obyvak
+  dashboard_path: snidane-tv
+  view_path: stav
+```
+
+Stav entity: `idle` (objednávání nezačalo), `choosing` (vybírá se), `approved` (výběr uzavřený),
+dál stav objednávky `ordered`, `awaiting_payment`, `paid`, `ready`, `closed`, `cancelled`. Atributy:
+`emoji`, `headline`, `detail` (hotové texty k zobrazení), `picks` (`name`, `text`), `pending` (jména),
+`chosen_count`, `member_count`, `groups` (`quantity`, `text`), `items`, `total`, `pickup_time`,
+`order_number`, `ordered_by`, `earlier` (dřívější kola dne), `tip`, `test_mode`. Entitu jde použít
+i v automatizacích (např. `trigger: state` na `ready`).
+
+Rozvržení dashboardu je v [`tv.py`](tv.py). Když se v nové verzi změní, doplněk dashboard přepíše.
+Chceš-li ho upravit po svém, smaž v editoru kódu dashboardu řádek `jinhua47_breakfast_layout: …`:
+pak už na něj doplněk nesáhne. Smazaný dashboard doplněk při dalším startu založí znovu.
+
 ## Fotky setů
 
 U setů s vlastní fotkou se ukazuje náhled. Vlastní fotky nahraj v Home Assistantu do
