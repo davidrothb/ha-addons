@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.18.5
+
+- Dashboard Snídaně TV (rozvržení 3, přepíše se při startu, pokud nebyl ručně upravený):
+  - Hodiny jsou menší a na jednom řádku s datem. Číslo objednávky má u „Zaplaceno“ a „Připraveno
+    k vyzvednutí“ vlastní velký řádek, takže je na televizi to nejčitelnější.
+  - Dřívější kolo připravené k vyzvednutí se ukazuje velkým písmem, ne jako drobný text pod nadpisem.
+  - Druhý krok ukazatele se jmenuje „Uzavřeno“ místo „Vybráno“, které vedle karty „Mají vybráno“
+    znamenalo něco jiného.
+  - Jména těch, kdo ještě nevybrali, a položky objednávky jsou větší, aby šly přečíst přes místnost.
+  - Zrušená objednávka: čas zrušení je pod nadpisem a ukazatel postupu se už neukazuje (neříká to dvakrát).
+  - Přehrávač Spotify se skryje, když je nedostupný, místo žlutého varování na celé ráno.
+  - Nadpisy sekcí jsou bez emoji. Emoji zůstává jen u stavu objednávky.
+
 ## 0.18.4
 
 - Oznámení s odkazem na platbu otevře LINE i na Androidu: aplikace Home Assistant tam odkaz `line://`

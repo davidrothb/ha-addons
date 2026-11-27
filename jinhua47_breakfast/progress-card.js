@@ -29,7 +29,7 @@ class Jinhua47ProgressCard extends HTMLElement {
           .label, .time { text-align: center; color: var(--secondary-text-color); font-size: 1.15em; }
           .label { margin-top: 12px; }
           .done .label { color: var(--primary-text-color); }
-          .cancelled { color: #e05a4f; font-size: 1.3em; text-align: center; }
+          .cancelled { color: var(--error-color, #db4437); font-size: 1.3em; text-align: center; }
         </style>
         <ha-card><h2></h2><div class="body"></div></ha-card>`;
       this.card = this.shadowRoot.querySelector("ha-card");

@@ -17,7 +17,7 @@ DASHBOARD_PATH = "snidane-tv"  # Home Assistant wants a hyphen in a dashboard's 
 VIEW_PATH = "stav"
 # Bump when the layout below changes: the dashboard is rewritten once on the next start, unless the
 # user removed MARKER from it (then it is theirs and stays as it is).
-LAYOUT_VERSION = 2
+LAYOUT_VERSION = 3
 MARKER = "jinhua47_breakfast_layout"
 MEDIA_PLAYER = "media_player.spotify_david_rothbauer"  # media-control card at the bottom
 CARD_SOURCE = Path(__file__).parent / "progress-card.js"
@@ -40,7 +40,7 @@ HEADLINES = {
 }
 
 # The progress bar's steps; each is green once reached, grey until then.
-STEPS = ("Otevřeno", "Vybráno", "Objednáno", "K vyzvednutí")
+STEPS = ("Otevřeno", "Uzavřeno", "Objednáno", "K vyzvednutí")
 ORDER_SENT = ("ordered", "awaiting_payment", "paid", "ready", "closed")
 
 
@@ -81,15 +81,19 @@ _E = f"{{% set e = '{ENTITY_ID}' %}}"
 _HEADLINE_CARD = _E + """
 <center>
 
-# 🕗 {{ now().strftime('%H:%M') }}
-{{ ['pondělí', 'úterý', 'středa', 'čtvrtek', 'pátek', 'sobota', 'neděle'][now().weekday()] }} {{ now().day }}. {{ now().month }}.
+### {{ now().strftime('%H:%M') }} · {{ ['pondělí', 'úterý', 'středa', 'čtvrtek', 'pátek', 'sobota', 'neděle'][now().weekday()] }} {{ now().day }}. {{ now().month }}.
 
 # {{ state_attr(e, 'emoji') or '🥐' }} {{ state_attr(e, 'headline') or 'Snídaně' }}
+{% if states(e) in ['paid', 'ready'] and state_attr(e, 'order_number') %}
+# Číslo {{ state_attr(e, 'order_number') }}
+{% endif %}
 
-## {{ state_attr(e, 'detail') or '' }}
+{% if state_attr(e, 'detail') %}
+## {{ state_attr(e, 'detail') }}
+{% endif %}
 
 {% for o in state_attr(e, 'earlier') or [] %}
-{{ o.text }}
+{% if o.stage == 'ready' %}## {% endif %}{{ o.text }}
 
 {% endfor %}
 {% if state_attr(e, 'tip') %}
@@ -99,7 +103,7 @@ _HEADLINE_CARD = _E + """
 """
 
 _CHOSEN_CARD = _E + """
-## ✅ Vybráno ({{ state_attr(e, 'chosen_count') or 0 }} z {{ state_attr(e, 'member_count') or 0 }})
+## Mají vybráno
 {% for p in state_attr(e, 'picks') or [] %}
 - **{{ p.name }}**: {{ p.text }}
 {% else %}
@@ -107,19 +111,20 @@ Zatím nikdo.
 {% endfor %}
 """
 
+# One heading per name: these are what people look for on the TV from across the room.
 _PENDING_CARD = _E + """
-## ⏳ Ještě nevybrali
+## Ještě nevybrali
 {% for name in state_attr(e, 'pending') or [] %}
-- {{ name }}
+### {{ name }}
 {% else %}
 Všichni mají vybráno 🥳
 {% endfor %}
 """
 
 _ORDER_CARD = _E + """
-## 🧾 Objednávka
+## Objednávka
 {% for g in state_attr(e, 'groups') or [] %}
-- {{ g.quantity }}× {{ g.text }}
+### {{ g.quantity }}× {{ g.text }}
 {% endfor %}
 
 **{{ state_attr(e, 'items') or 0 }} ks, {{ state_attr(e, 'total') or 0 }} NT$**
@@ -154,14 +159,19 @@ def dashboard_config() -> dict:
                 "type": "vertical-stack",
                 "cards": [
                     _markdown(_HEADLINE_CARD),
-                    _when(["choosing", "approved", *ORDER_SENT, "cancelled"],
+                    _when(["choosing", "approved", *ORDER_SENT],  # cancelled: the headline says it
                           {"type": CARD_TYPE, "entity": ENTITY_ID}),
                     _when(["choosing"], {
                         "type": "horizontal-stack",
                         "cards": [_markdown(_CHOSEN_CARD), _markdown(_PENDING_CARD)],
                     }),
                     _when(["approved", "ordered", "awaiting_payment", "paid", "ready"], _markdown(_ORDER_CARD)),
-                    {"type": "media-control", "entity": MEDIA_PLAYER},
+                    {  # hidden rather than a warning on the TV when Spotify is logged out
+                        "type": "conditional",
+                        "conditions": [{"condition": "state", "entity": MEDIA_PLAYER,
+                                        "state_not": ["unavailable", "unknown"]}],
+                        "card": {"type": "media-control", "entity": MEDIA_PLAYER},
+                    },
                 ],
             }],
         }],

@@ -1243,19 +1243,19 @@ class App:
             state = "idle"
         pickup = (order.get("target_time") or "")[-5:]
         number = order.get("order_number") or ""
+        steps, cancelled_at = tv.progress_steps(str(self.today()), opened, approved or None, order)
         detail = {
             "idle": "",
             "choosing": f"Vybráno {len(picks)} z {len(members)}" + (f" · od {opened['at']}" if opened else ""),
             "approved": "Čeká se na odeslání objednávky",
             "ordered": f"Vyzvednutí v {pickup}",
             "awaiting_payment": f"Vyzvednutí v {pickup}",
-            "paid": (f"Číslo {number} · " if number else "") + f"vyzvednutí v {pickup}",
-            "ready": f"Číslo {number}" if number else "",
+            "paid": f"Vyzvednutí v {pickup}",  # the number has its own line on the TV
+            "ready": "",
             "closed": "",
-            "cancelled": "",
+            "cancelled": cancelled_at,
         }.get(state, "")
         emoji, headline = tv.HEADLINES.get(state, ("🥐", "Snídaně"))
-        steps, cancelled_at = tv.progress_steps(str(self.today()), opened, approved or None, order)
         earlier_texts = [{
             "order_number": o.get("order_number") or "",
             "stage": o["stage"],
