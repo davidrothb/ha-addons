@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.16.0
+
+- Náhledy fotek jen z vlastních fotek; fotky z idingu se už nepoužívají ani nestahují. Set bez vlastní
+  fotky je bez náhledu.
+- Před zahájením objednávání vidí strávníci menu a můžou si naklikat výběr, jen ho nejde potvrdit
+  (tlačítko „Objednávky ještě nejsou otevřené“). Přezdívka, hlášky a lišta zůstávají skryté jako dřív.
+  Naklikaný výběr zůstane i po zahájení, kdy se stránka sama obnoví, a stačí ho potvrdit. „Jako včera“ je
+  vidět i při naklikávání.
+- Oprava diakritiky ve jménu přihlášeného uživatele („Ahoj GabÄa“ místo „Ahoj Gabča“): jméno se bere
+  ze seznamu uživatelů Home Assistantu a hlavička od Ingressu se čte jako UTF-8.
+- Doplněk už nespadne při startu, když Home Assistant zrovna startuje a jeho websocket vrací 502
+  (dřív se několikrát restartoval s chybou WebSocketBadStatusException); zapíše to a pokračuje.
+- Řádky v logu z různých vláken se už neslévají do jednoho („07:24:562026-11-27 07:24:56 Událost…“).
+- Denní oznámení se přeskočí, když už ten den správce zahájil objednávání a pozvánky odešly (dřív
+  přišlo „co si dáš k snídani“ i po vyzvednutí). Přeskočení je v logu.
+- „Zahájit objednávání“ otevře okno s volbou: zahájit a poslat pozvánky, zahájit bez pozvánek, nebo
+  zrušit. Pozvánky jdou poslat i při dalším otevření téhož dne; okno řekne, kdy už dnes odešly, a pak
+  doporučí zahájit bez nich.
+- Víc objednávek za den: po zaplacení se výběr každého, kdo byl v objednávce, uloží jako „naposledy“.
+  Tlačítko „Další kolo“ (po zaplacení) výběry vyčistí a hned nabídne nové zahájení; vybírat můžou znovu
+  všichni. Zaplacená objednávka se dál hlídá do vyzvednutí (oznámení „připraveno“ i události).
+- „Jako včera“ ukazuje poslední objednaný výběr, ze stejného dne jako „Jako naposledy (dnes v 07:25)“.
+  O půlnoci se ukládá jen výběr ze dne bez zaplacené objednávky (např. dokončené ručně na iding.tw).
+- Log už nezahlcuje chyba „Broken pipe“, když stránka odejde během čekání na živé změny.
+- „Tip pro dnešek“: volný text v nastavení (Hlavní stránka), který strávníci uvidí nad výběrem jídla,
+  hned po uložení. Prázdný tip se neukáže.
+
 ## 0.15.1
 
 - Oprava časů vyzvednutí u větších objednávek: doplněk se na časy ptá s cenou schválené objednávky jako

@@ -93,11 +93,11 @@ Vyzkoušet jde i bez objednávky: Vývojářské nástroje → Události → ode
 
 ## Fotky setů
 
-U setů se ukazuje náhled fotky. Vlastní fotky nahraj v Home Assistantu do
+U setů s vlastní fotkou se ukazuje náhled. Vlastní fotky nahraj v Home Assistantu do
 `/addon_configs/<slug doplňku>/photos/` (přes Samba, File editor nebo Studio Code Server; přesná cesta
 je v logu doplňku a seznam názvů souborů v `NAZVY.txt` tamtéž). Ukážou se do 10 minut bez nové verze
 a na GitHub se nedostanou. Fotky v repozitáři patří do [`photos/`](photos/) (víc v
-[`photos/README.md`](photos/README.md)). Vlastní fotky mají přednost před fotkami z idingu.
+[`photos/README.md`](photos/README.md)). Set bez vlastní fotky je bez náhledu.
 
 ## Lokální vývoj
 
@@ -120,3 +120,11 @@ Které sety a nápoje stránka nabízí, oblíbené sety, české názvy a přek
 Zkopíruj složku `jinhua47_breakfast` do `/addons/` na HA (doplněk Samba nebo SSH),
 v obchodě s doplňky dej **⋮ → Zkontrolovat aktualizace** a doplněk se objeví v sekci
 **Local add-ons**. Po změně kódu stačí **Znovu sestavit**.
+
+## TODO
+
+- [ ] Hodnocení jídel hvězdičkami: každý strávník ohodnotí svou dnešní snídani.
+- [ ] Celkové statistiky útraty (celkem i po lidech) s ekvivalentem útraty.
+- [ ] Dashboard v Home Assistantu.
+- [ ] Část dashboardu na Google Cast (zobrazení na Chromecastu nebo Nest Hubu).
+- [ ] Integrace se Settle Up: po zaplacení zapsat útratu, kdo platil a kolik dluží ostatní.

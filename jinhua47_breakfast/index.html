@@ -135,7 +135,18 @@
     padding: 16px; background: rgba(0, 0, 0, .85); cursor: zoom-out;
   }
   .photo-view img { max-width: 100%; max-height: 100%; border-radius: 12px; }
+  #open-dialog {
+    width: min(420px, calc(100% - 32px)); padding: 20px 16px; border: 0; border-radius: 16px;
+    background: var(--card); color: var(--text);
+  }
+  #open-dialog::backdrop { background: rgba(0, 0, 0, .5); }
+  #open-dialog h3 { margin: 0 0 8px; }
+  #open-dialog p { margin: 0 0 16px; color: var(--muted); font-size: 15px; }
+  .dialog-actions { display: grid; gap: 8px; }
+  .dialog-actions button.secondary { padding: 12px; font-size: 15px; }
   .choice-name { font-weight: 600; overflow-wrap: anywhere; }
+  #tip h3 { margin: 0 0 6px; }
+  .tip-text { margin: 0; white-space: pre-line; overflow-wrap: anywhere; }
   .choice-sub { font-size: 13px; color: var(--muted); }
   .choice-price { font-size: 14px; color: var(--muted); white-space: nowrap; }
   .summary { display: grid; gap: 12px; }
@@ -181,7 +192,6 @@
   </section>
   <section id="closed-note" class="hello" {{CLOSED_HIDDEN}}>
     <h2>Objednávky zatím nejsou otevřené</h2>
-    <p class="phrase">Až je správce otevře, objeví se tu výběr snídaně.</p>
   </section>
   <section class="hello" {{VISIBLE_HIDDEN}}>
     <h2>Ahoj {{NAME}}</h2>
@@ -221,6 +231,7 @@
       </div>
     </div>
     <p id="order-state" class="notice" hidden></p>
+    <button id="new-round" class="primary" hidden>Další kolo</button>
     <button id="reset-order" class="secondary" hidden>Resetovat objednávku v doplňku</button>
     <button id="approve" class="primary">Schválit a poslat do košíku</button>
     <button id="unlock" class="secondary" hidden>Znovu otevřít výběr</button>
@@ -232,6 +243,10 @@
     <p class="hint">Zatím nejsi mezi strávníky. Požádej správce, ať tě přidá.</p>
   </section>
   <div id="order" class="steps" {{MEMBER_HIDDEN}}>
+    <section id="tip" hidden>
+      <h3>💡 Tip pro dnešek</h3>
+      <p id="tip-text" class="tip-text"></p>
+    </section>
     <section id="locked-note" hidden>
       <p class="notice">🔒 Správce objednávku uzavřel a poslal do košíku, výběr už nejde změnit.</p>
     </section>
@@ -275,6 +290,16 @@
     </section>
   </div>
 </main>
+
+<dialog id="open-dialog">
+  <h3>Zahájit objednávání</h3>
+  <p id="open-dialog-text"></p>
+  <div class="dialog-actions">
+    <button id="open-with-invite" class="primary">Zahájit a poslat pozvánky</button>
+    <button id="open-without-invite" class="secondary">Zahájit bez pozvánek</button>
+    <button id="open-cancel" class="secondary">Zrušit</button>
+  </div>
+</dialog>
 
 <main id="settings" hidden>
   <section>
@@ -322,6 +347,10 @@
     <label class="field">Hlášky pod pozdravem (jedna na řádek)
       <textarea id="page-phrases" rows="4"></textarea>
     </label>
+    <label class="field">Tip pro dnešek
+      <textarea id="daily-tip" rows="3" placeholder="Prázdné = tip se neukáže"></textarea>
+    </label>
+    <p class="hint">Strávníci ho uvidí nad výběrem jídla, hned po uložení. Zůstane tam, dokud ho nesmažeš.</p>
   </section>
   <section class="form">
     <h3>Lišta nahoře</h3>
@@ -531,6 +560,7 @@
     document.getElementById("daily-time").value = data.daily_notification_time || "";
     document.getElementById("notification-phrases").value = data.notification_phrases.join("\n");
     document.getElementById("page-phrases").value = data.page_phrases.join("\n");
+    document.getElementById("daily-tip").value = data.daily_tip || "";
     document.getElementById("ticker-chosen-phrases").value = data.ticker_chosen_phrases.join("\n");
     document.getElementById("ticker-pending-phrases").value = data.ticker_pending_phrases.join("\n");
     document.getElementById("notify-admin-ready").checked = data.notify_admin_ready;
@@ -587,6 +617,7 @@
         daily_notification_time: document.getElementById("daily-time").value,
         notification_phrases: lines(document.getElementById("notification-phrases").value),
         page_phrases: lines(document.getElementById("page-phrases").value),
+        daily_tip: document.getElementById("daily-tip").value,
         ticker_chosen_phrases: lines(document.getElementById("ticker-chosen-phrases").value),
         ticker_pending_phrases: lines(document.getElementById("ticker-pending-phrases").value),
         notify_admin_ready: document.getElementById("notify-admin-ready").checked,
@@ -679,6 +710,7 @@
   const currentDrink = () => menu.drinks.find((d) => d.index === order.drink);
 
   function renderOrder() {
+    if (browseOnly && menu) rememberDraft();
     const set = currentSet();
     const drink = currentDrink();
     const setCard = (s) => ({
@@ -737,15 +769,32 @@
         + (order.temp === "hot" ? "teplé" : "studené") + ", " + (order.size === "large" ? "velké" : "malé");
       document.getElementById("summary-price").textContent = money(set.price + drink.extra + (size?.price || 0));
       const saved = savedChoice && choiceKey(savedChoice) === choiceKey(order);
-      saveChoiceButton.disabled = saved;
+      saveChoiceButton.disabled = saved || browseOnly;
       saveChoiceButton.hidden = locked;
       const summaryHint = document.getElementById("summary-hint");
-      summaryHint.textContent = locked ? "Schváleno správcem, je v košíku na idingu." : "";
-      summaryHint.hidden = !locked;
-      saveChoiceButton.textContent = saved ? "Vybráno ✓" : savedChoice ? "Uložit změnu" : "Vybrat";
+      summaryHint.textContent = locked ? "Schváleno správcem, je v košíku na idingu."
+        : browseOnly ? "Potvrdit půjde, až správce otevře objednávání. Výběr ti tu zůstane." : "";
+      summaryHint.hidden = !summaryHint.textContent;
+      saveChoiceButton.textContent = browseOnly ? "Objednávky ještě nejsou otevřené"
+        : saved ? "Vybráno ✓" : savedChoice ? "Uložit změnu" : "Vybrat";
     }
     document.getElementById("locked-note").hidden = !locked;
     restartButton.hidden = !savedChoice || locked;
+  }
+
+  // Ordering not opened yet: members browse and pick, but cannot save. The pick is kept in the
+  // browser (sessionStorage) so it survives the reload when the admin opens ordering.
+  const browseOnly = document.getElementById("home").dataset.view === "closed";
+  const DRAFT_KEY = "jinhua47-draft";
+  function rememberDraft() {
+    try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ day: new Date().toDateString(), order })); } catch {}
+  }
+  function takeDraft() {
+    try {
+      const draft = JSON.parse(sessionStorage.getItem(DRAFT_KEY) || "null");
+      sessionStorage.removeItem(DRAFT_KEY);
+      return draft && draft.day === new Date().toDateString() ? draft.order : null;
+    } catch { return null; }
   }
 
   // --- saved choice: the ticker shows who has chosen ----------------------
@@ -808,6 +857,9 @@
     const [emoji, phrase] = stages[data.stage] || ["🔒", "je uzavřená."];
     const lockEntry = { emoji, name: "Objednávka", phrase, chosen: true };
     renderTicker(locked ? [lockEntry, ...data.ticker] : data.ticker);
+    const tip = (data.tip || "").trim();
+    document.getElementById("tip").hidden = !tip;
+    document.getElementById("tip-text").textContent = tip;
     previousChoice = data.previous || null;
     const mineChanged = choiceKey(data.mine || {}) !== choiceKey(savedChoice || {});
     const hadSaved = !!savedChoice;
@@ -841,7 +893,9 @@
     return row;
   }
 
+  let lastOverview = null; // the last admin overview (whether invitations already went out today)
   function renderAdminOrder(data) {
+    lastOverview = data;
     adminOrder.hidden = false;
     document.getElementById("order-members").replaceChildren(...data.members.map((m) =>
       overviewRow(m.name, m.choice ? m.choice.text : "nevybráno", !m.choice)));
@@ -920,6 +974,7 @@
     state.hidden = !texts[stage];
     state.textContent = texts[stage] || "";
     document.getElementById("reset-order").hidden = !order;
+    document.getElementById("new-round").hidden = !["paid", "ready", "closed"].includes(stage);
   }
 
   // The offered times move on with the clock and depend on the order size: reloaded every minute
@@ -984,8 +1039,37 @@
     }
   }
 
-  document.getElementById("open-button").addEventListener("click", (event) =>
-    adminAction(event.currentTarget, "api/admin/open", "Otevírám objednávání…"));
+  // Opening asks whether to send the invitations, so they never go out by mistake; on a second
+  // opening the same day "without" is the suggested one.
+  const openDialog = document.getElementById("open-dialog");
+  const withInvite = document.getElementById("open-with-invite");
+  const withoutInvite = document.getElementById("open-without-invite");
+  document.getElementById("open-button").addEventListener("click", () => {
+    const invited = lastOverview?.invited;
+    document.getElementById("open-dialog-text").textContent = invited
+      ? "Pozvánky už dnes odešly" + (typeof invited === "string" ? " v " + invited : "")
+        + ". Poslat je strávníkům s telefonem znovu?"
+      : "Strávníkům s telefonem přijde pozvánka. Když ji pošleš, denní oznámení se dnes už neposílá.";
+    withInvite.className = invited ? "secondary" : "primary";
+    withoutInvite.className = invited ? "primary" : "secondary";
+    openDialog.showModal();
+  });
+  const openOrdering = (invite) => {
+    openDialog.close();
+    adminAction(document.getElementById("open-button"), "api/admin/open",
+      invite ? "Otevírám objednávání a posílám pozvánky…" : "Otevírám objednávání…", { invite });
+  };
+  withInvite.addEventListener("click", () => openOrdering(true));
+  withoutInvite.addEventListener("click", () => openOrdering(false));
+  document.getElementById("open-cancel").addEventListener("click", () => openDialog.close());
+  // Another order the same day: what was ordered is saved as everyone's last pick, the picks are
+  // cleared and ordering opens again (the dialog asks about invitations).
+  document.getElementById("new-round").addEventListener("click", async (event) => {
+    if (!confirm("Začít další kolo? Dnešní výběry se vyčistí (objednané zůstanou uložené jako „naposledy“) "
+      + "a vybírat můžou znovu všichni. Zaplacená objednávka se dál hlídá do vyzvednutí.")) return;
+    await adminAction(event.currentTarget, "api/admin/new_round", "Začínám další kolo…");
+    if (!lastOverview?.opened && !lastOverview?.order) document.getElementById("open-button").click();
+  });
   document.getElementById("reset-order").addEventListener("click", (event) => {
     if (!confirm("Resetovat objednávku jen v doplňku? Na idingu se nic nezmění: objednávka tam zůstane, "
       + "jak je, a doplněk ji přestane sledovat. Schválení se zruší, výběry zůstanou.")) return;
@@ -1009,8 +1093,11 @@
 
   // Show the saved choice once both it and the menu are loaded (unless already picking).
   function restoreChoice() {
-    if (!menu || !savedChoice || order.set !== null) return;
-    Object.assign(order, savedChoice);
+    if (!menu || order.set !== null) return;
+    // A pick made before the opening (not saved yet) comes back after the reload, unless one is saved.
+    const draft = savedChoice ? null : takeDraft();
+    if (!savedChoice && !draft) return;
+    Object.assign(order, savedChoice || draft);
     update();
   }
 
@@ -1095,8 +1182,8 @@
     return api("api/menu").then((data) => {
       menu = data;
       show(status, data.stale ? "err" : "", data.stale ? "iding teď neodpovídá, menu je z posledního načtení." : "");
+      restoreChoice(); // before the first render, which would store the empty pick over the draft
       renderOrder();
-      restoreChoice();
     }).catch((err) => show(status, "err", err.message));
   }
 

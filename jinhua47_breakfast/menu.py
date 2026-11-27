@@ -105,9 +105,6 @@ def build_menu(raw: dict, inventory: list | None = None) -> dict:
     options = {o["index"]: o for o in menu.get("options", [])}
     items = {i["index"]: i for i in menu.get("option_items", [])}
     sold_out = {i.get("index") for i in inventory or [] if i.get("status") == -1}
-    photo_base = (menu.get("photo_url") or "").rstrip("/")
-    if not photo_base.startswith("https://"):
-        photo_base = ""
 
     def choice(entree: dict, spec: tuple) -> dict | None:
         """{key: {option, item, price} or None} for one option group; None without the group."""
@@ -163,8 +160,6 @@ def build_menu(raw: dict, inventory: list | None = None) -> dict:
             "name": combo["name"],
             "label": label,
             "slug": slug(label),
-            # The set's photo on iding (most sets have none); the add-on serves it, see App.photo.
-            "iding_photo": f"{photo_base}/{combo['photo']}" if photo_base and combo.get("photo") else None,
             "contents": contents(combo.get("photo_note")),
             "favorite": combo["name"] in FAVORITES,
             "price": combo.get("price") or 0,

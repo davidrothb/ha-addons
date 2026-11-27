@@ -52,7 +52,6 @@ ALERT_DATA = {
 # then the ones shipped with the add-on.
 PHOTOS_DIR = HERE / "photos"
 PHOTO_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
-PHOTO_MAX_BYTES = 5_000_000
 PAGE = HERE / "index.html"
 ADMIN_GROUP = "system-admin"
 CACHE_SECONDS = 60
@@ -85,6 +84,8 @@ DEFAULT_SETTINGS = {
         "dneska je ideální den na vajíčka.",
     ],
     "page_phrases": ["dneska ti to sluší.", "káva už čeká.", "vyber si něco dobrého."],
+    # Free text shown to members above the menu ("Tip pro dnešek"); empty = not shown.
+    "daily_tip": "",
     # The ticker at the top of the page: one entry per member, a phrase by whether they have chosen.
     "ticker_chosen_phrases": ["má jasno.", "už se těší.", "vybral jako šampion."],
     "ticker_pending_phrases": ["pořád neví, co chce.", "zdržuje celou výpravu.", "ještě spí?"],
@@ -118,9 +119,16 @@ DEV_PHONES = [
 ]
 
 
+LOG_LOCK = threading.Lock()
+
+
 def log(*parts) -> None:
-    """One line in the add-on log, with local time (the Supervisor log has no timestamps)."""
-    print(datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S"), *parts, flush=True)
+    """One line in the add-on log, with local time (the Supervisor log has no timestamps).
+    Written in one piece under a lock, so lines from background threads never run together."""
+    line = " ".join([datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S"), *map(str, parts)]) + "\n"
+    with LOG_LOCK:
+        sys.stdout.write(line)
+        sys.stdout.flush()
 
 
 def keep_running(loop):
@@ -147,6 +155,15 @@ def clean_lines(value) -> list[str]:
     return [str(v).strip() for v in value or [] if str(v).strip()]
 
 
+def header_text(value: str) -> str:
+    """An HTTP header as sent: Ingress sends names in UTF-8, http.server reads headers as Latin-1
+    ("Gabča" arrives as "GabÄ\x8da"). Text that is not such UTF-8 stays as it is."""
+    try:
+        return value.encode("latin-1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return value
+
+
 def supervisor_call(method: str, path: str, body: dict | None = None):
     request = urllib.request.Request(
         f"{SUPERVISOR}{path}",
@@ -166,7 +183,10 @@ def websocket_commands(*commands: dict) -> list:
     """Run Home Assistant websocket commands and return their results in order."""
     import websocket  # websocket-client; only installed in the add-on image
 
-    ws = websocket.create_connection("ws://supervisor/core/websocket", timeout=15)
+    try:
+        ws = websocket.create_connection("ws://supervisor/core/websocket", timeout=15)
+    except websocket.WebSocketException as exc:  # e.g. 502 while Home Assistant (re)starts
+        raise RuntimeError(f"Home Assistant websocket: {exc}") from exc
     try:
         ws.recv()  # auth_required
         ws.send(json.dumps({"type": "auth", "access_token": os.environ["SUPERVISOR_TOKEN"]}))
@@ -183,6 +203,8 @@ def websocket_commands(*commands: dict) -> list:
                 raise RuntimeError(f"{command['type']}: {reply.get('error')}")
             results.append(reply["result"])
         return results
+    except websocket.WebSocketException as exc:
+        raise RuntimeError(f"Home Assistant websocket: {exc}") from exc
     finally:
         ws.close()
 
@@ -248,10 +270,8 @@ class App:
         data_dir.mkdir(exist_ok=True)
         self.settings_file = data_dir / "settings.json"
         self.menu_file = data_dir / "menu.json"  # last good menu, used while iding is down
-        self.photo_cache = data_dir / "photos"  # iding's set photos, downloaded once
         # /config is the add-on's own config folder (config.yaml map: addon_config), /addon_configs/<slug> in HA.
         self.own_photos_dir = (HERE / "dev_config" if dev else Path("/config")) / "photos"
-        self.photo_lock = threading.Lock()
         # Today's picks and the admin's approval: {"date", "choices": {user_id: ..}, "approved": {..} | None}
         self.choices_file = data_dir / "choices.json"
         stored_choices = json.loads(self.choices_file.read_text()) if self.choices_file.exists() else {}
@@ -263,12 +283,15 @@ class App:
         # {"by", "at"} once an admin started today's ordering; until then members see only a notice.
         self.opened: dict | None = stored_choices.get("opened")
         # Whether today's invitation to members went out (only on the first opening of the day).
-        self.invited: bool = stored_choices.get("invited", False)
+        # When invitations last went out today ("HH:MM"), or False; True from older versions.
+        self.invited: str | bool = stored_choices.get("invited", False)
         # Which "ready" notification each admin got today ("you" or "all"), so it is sent once.
         self.admin_notified: dict = stored_choices.get("admin_notified", {})
         # Today's iding order once placed: stage ordered -> awaiting_payment -> paid -> ready -> closed
         # (or cancelled), ids for LINE Pay, and who placed it (the only one notified about it).
         self.order: dict | None = stored_choices.get("order")
+        # Today's earlier orders ("Další kolo"): paid ones the watcher still follows until picked up.
+        self.earlier_orders: list = stored_choices.get("earlier_orders", [])
         self._iding: Iding | None = None  # logged-in client, reused while the session lasts
         self.iding_lock = threading.Lock()
         options_file = data_dir / "options.json"
@@ -333,42 +356,19 @@ class App:
             log(f"Složku na vlastní fotky nejde připravit: {exc}")
 
     def photo_link(self, item: dict) -> str | None:
-        """Relative URL of the set's photo for the page (own photo first, then iding's), or None.
+        """Relative URL of the set's own photo for the page, or None (iding's photos are not used).
         The ?v= part changes with the picture, so browsers may cache each version for long."""
         own = self.own_photo(item.get("slug", ""))
-        if own:
-            tag = f"{own.name}{own.stat().st_mtime_ns}"
-        elif item.get("iding_photo"):
-            tag = item["iding_photo"]
-        else:
+        if not own:
             return None
+        tag = f"{own.name}{own.stat().st_mtime_ns}"
         return f"photo/{item['index']}?v={hashlib.sha1(tag.encode()).hexdigest()[:10]}"
 
     def photo(self, index: int) -> tuple[bytes, str] | None:
-        """(image bytes, content type) of a set's photo; iding's is downloaded on first use and kept."""
+        """(image bytes, content type) of a set's own photo."""
         item = next((s for s in self.menu()["sets"] if s["index"] == index), None)
-        if not item:
-            return None
-        own = self.own_photo(item.get("slug", ""))
-        if own:
-            return own.read_bytes(), PHOTO_TYPES[own.suffix]
-        url = item.get("iding_photo")
-        if not url:
-            return None
-        ext = Path(url).suffix.lower() if Path(url).suffix.lower() in PHOTO_TYPES else ".jpg"
-        cached = self.photo_cache / f"{hashlib.sha1(url.encode()).hexdigest()}{ext}"
-        with self.photo_lock:
-            if not cached.is_file():
-                request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-                with urllib.request.urlopen(request, timeout=15) as response:
-                    kind = response.headers.get_content_type()
-                    data = response.read(PHOTO_MAX_BYTES + 1)
-                if not kind.startswith("image/") or len(data) > PHOTO_MAX_BYTES:
-                    raise OSError(f"fotka {url} není obrázek do 5 MB ({kind}, {len(data)} B)")
-                self.photo_cache.mkdir(exist_ok=True)
-                cached.write_bytes(data)
-                log(f"Fotka setu {item['label']} stažená z idingu ({len(data) // 1024} kB).")
-        return cached.read_bytes(), PHOTO_TYPES[ext]
+        own = self.own_photo(item.get("slug", "")) if item else None
+        return (own.read_bytes(), PHOTO_TYPES[own.suffix]) if own else None
 
     # --- today's choices and the ticker -------------------------------------
 
@@ -376,13 +376,18 @@ class App:
         """{user_id: choice} for today; yesterday's picks are dropped. Caller holds the lock."""
         today = str(self.today())
         if self._choices_date != today:
-            if self._choices_date:  # keep the finished day's picks; a member who skipped it keeps an older one
+            if self._choices_date:
+                # What was ordered is saved as "last" when each order gets paid (record_ordered). A pick
+                # from a day with no such record (e.g. the order finished by hand on iding.tw) is kept here;
+                # a member who skipped the day keeps an older one.
                 for user_id, choice in self._choices.items():
-                    self.previous[user_id] = {"date": self._choices_date, "choice": choice}
+                    if self.previous.get(user_id, {}).get("date") != self._choices_date:
+                        self.previous[user_id] = {"date": self._choices_date, "choice": choice}
             self._choices_date, self._choices, self.approved, self.admin_notified = today, {}, None, {}
             self.opened = None
             self.invited = False
             self.order = None
+            self.earlier_orders = []
         return self._choices
 
     def is_open(self) -> bool:
@@ -392,8 +397,9 @@ class App:
             return self.opened is not None
 
     def view(self, user: dict) -> str:
-        """What the page shows the user: "open" (nickname, phrases, ticker, menu), or only a notice:
-        "test" (test mode), "not_member" or "closed" (ordering not started). Admins always get "open"."""
+        """What the page shows the user: "open" (nickname, phrases, ticker, menu), "closed" (ordering
+        not started: a notice and the menu to browse, nothing can be saved), or only a notice: "test"
+        (test mode) or "not_member". Admins always get "open"."""
         if user.get("is_admin"):
             return "open"
         if self.settings.get("test_mode"):
@@ -405,15 +411,17 @@ class App:
     def visible(self, user: dict) -> bool:
         return self.view(user) == "open"
 
-    def open_ordering(self, by: str) -> bool:
-        """Open today's ordering; True when members should be invited (first opening of the day)."""
+    def open_ordering(self, by: str, invite: bool) -> None:
+        """Open today's ordering; with invite, the invitations are going out now (the admin chooses,
+        also on a second opening the same day)."""
         with self.lock:
             self.choices()
+            now = datetime.now(TZ).strftime("%H:%M")
             if self.opened is None:
-                self.opened = {"by": by, "at": datetime.now(TZ).strftime("%H:%M")}
-            invite, self.invited = not self.invited, True
+                self.opened = {"by": by, "at": now}
+            if invite:
+                self.invited = now
             self.save_choices()
-            return invite
 
     def invite_members(self, opener_id: str) -> None:
         """"Ahoj <přezdívka>, <hláška z denních oznámení>" with "Klikni zde a objednej." to every
@@ -488,6 +496,7 @@ class App:
             "invited": self.invited,
             "admin_notified": self.admin_notified,
             "order": self.order,
+            "earlier_orders": self.earlier_orders,
         }
         tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2))
         tmp.replace(self.choices_file)
@@ -533,6 +542,7 @@ class App:
             "total": sum(g["price"] * g["quantity"] for g in groups.values()),
             "approved": approved,
             "opened": opened,
+            "invited": self.invited,
             "order": order or None,
         }
 
@@ -661,7 +671,7 @@ class App:
             "order_id": order.get("id"),
             "order_number": order.get("order_number"),
             "total": order.get("total"),
-            "items": items,
+            "items": order.get("items", items),
             "pickup_time": target[-5:],
             "pickup": target,
             "by": order.get("by"),
@@ -720,6 +730,7 @@ class App:
             self.set_order(
                 stage="ordered", id=order["id"], item_name=order["item_name"], total=order.get("total"),
                 target_time=target_time, by=user["name"], by_id=user["id"], carrier=carrier,
+                items=approved["items"],
                 at=datetime.now(TZ).strftime("%H:%M"), order_number=None,
             )
             log(f"{user['name']} odeslal objednávku {order['id']} ({order.get('total')} NT$, {target_time}).")
@@ -795,6 +806,7 @@ class App:
         order = self.current_order(("ordered", "awaiting_payment"))
         order = self.set_order(stage="paid", order_number=order_number or order.get("order_number"), status=status)
         log(f"Objednávka {order['id']} zaplacena, číslo {order['order_number']}.")
+        self.record_ordered()
         number = f" Číslo objednávky {order['order_number']}." if order.get("order_number") else ""
         self.notify_orderer(order, f"Zaplaceno ✓.{number} Vyzvednutí v {order['target_time'][-5:]}.")
 
@@ -804,6 +816,51 @@ class App:
         self.with_iding(lambda client: client.cancel_order(order["id"]))
         self.set_order(stage="cancelled")
         log(f"Objednávka {order['id']} zrušena.")
+
+    def record_ordered(self) -> None:
+        """Save what everyone in the paid order picked as their last pick ("Jako naposledy")."""
+        with self.lock:
+            self.choices()
+            at = datetime.now(TZ).strftime("%H:%M")
+            for user_id, choice in self._choices.items():
+                self.previous[user_id] = {"date": self._choices_date, "at": at, "choice": choice}
+            count = len(self._choices)
+            self.save_choices()
+        log(f"Objednané výběry uloženy jako „naposledy“ ({count}).")
+
+    def new_round(self, by: str) -> None:
+        """After a paid order: start another one the same day. Everyone can pick again (the picks are
+        cleared; what was ordered is already saved as their last pick), ordering closes until the
+        admin opens it again, and the paid order is still followed until it is picked up."""
+        with self.lock:
+            self.choices()
+            order = self.order or {}
+            if order.get("stage") not in ("paid", "ready", "closed"):
+                raise IdingError("Další kolo jde až po zaplacené objednávce.")
+            if order.get("stage") in ("paid", "ready"):
+                self.earlier_orders.append(order)
+            count = len(self._choices)
+            self._choices, self.approved, self.order, self.admin_notified = {}, None, None, {}
+            self.opened = None
+            self.save_choices()
+        log(f"{by} začal další kolo: objednávka {order.get('id')} (číslo {order.get('order_number') or '–'}) "
+            f"zůstává sledovaná, {count} výběrů vyčištěno, objednávání zavřené do dalšího zahájení.")
+
+    def update_earlier(self, order_id, **changes) -> dict:
+        """Like set_order for one of today's earlier orders; {} when it is gone (midnight)."""
+        with self.lock:
+            self.choices()
+            for index, order in enumerate(self.earlier_orders):
+                if order.get("id") == order_id:
+                    before = order.get("stage")
+                    order = self.earlier_orders[index] = {**order, **changes}
+                    self.save_choices()
+                    break
+            else:
+                return {}
+        if order.get("stage") != before and order.get("stage") in ORDER_EVENTS:
+            self.fire_order_event(order, None)
+        return dict(order)
 
     def reset_order(self, by: str) -> None:
         """Forget today's order in the add-on only, whatever its state on iding (nothing is sent there).
@@ -823,11 +880,47 @@ class App:
         else:
             log(f"{by} resetoval objednávku v doplňku (žádná nebyla).")
 
+    def follow_picked_up(self, order: dict, found: dict | None, update) -> None:
+        """A paid order on its way to pickup: ready / closed / cancelled by the store.
+        update(**changes) stores the changes and returns the order, or {} when it is gone."""
+        status = (found or {}).get("order_status")
+        if status != order.get("status"):
+            log(f"Objednávka {order['id']} má na idingu stav {status}" + ("" if found else " (nenalezena)") + ".")
+            order = update(status=status)  # log each change once, not every minute
+            if not order:
+                return  # reset or replaced meanwhile
+        if status in (ORDER_READY, ORDER_CLOSED) and order["stage"] == "paid":
+            order = update(stage="ready" if status == ORDER_READY else "closed", status=status)
+            if order:
+                self.notify_orderer(order, "Snídaně je připravená k vyzvednutí"
+                                    + (f" (číslo {order['order_number']})." if order.get("order_number") else "."))
+        elif status == ORDER_CLOSED:
+            update(stage="closed", status=status)
+        elif status == ORDER_CANCELLED:
+            order = update(stage="cancelled", status=status)
+            if order:
+                self.notify_orderer(order, "Obchod objednávku zrušil"
+                                    + (f" (číslo {order['order_number']})." if order.get("order_number") else "."))
+
+    def watch_earlier_orders(self) -> None:
+        """Today's earlier (paid) orders from previous rounds, until they are picked up."""
+        with self.lock:
+            self.choices()
+            earlier = [dict(o) for o in self.earlier_orders if o.get("stage") in ("paid", "ready")]
+        for order in earlier:
+            try:
+                found = self.with_iding(lambda client: client.order_status(order["id"]))
+            except IdingError as exc:
+                log(f"Stav objednávky {order['id']} se nepodařilo zjistit: {exc}")
+                continue
+            self.follow_picked_up(order, found, lambda **changes: self.update_earlier(order["id"], **changes))
+
     def order_watch_loop(self) -> None:
         """Every minute check today's order on iding: an unpaid one that got paid elsewhere (iding.tw)
         becomes paid; a paid one notifies the orderer once it is ready for pickup."""
         while True:
             time.sleep(ORDER_WATCH_SECONDS)
+            self.watch_earlier_orders()
             with self.lock:
                 self.choices()
                 order = dict(self.order or {})
@@ -851,25 +944,7 @@ class App:
                     if order:
                         self.notify_orderer(order, "Nezaplacená objednávka byla na idingu zrušená.")
                 continue
-            status = (found or {}).get("order_status")
-            if status != order.get("status"):
-                log(f"Objednávka {order['id']} má na idingu stav {status}" + ("" if found else " (nenalezena)") + ".")
-                order = self.set_order(only_id=order["id"], status=status)  # log each change once, not every minute
-                if not order:
-                    continue  # reset or replaced meanwhile
-            if status in (ORDER_READY, ORDER_CLOSED) and order["stage"] == "paid":
-                order = self.set_order(only_id=order["id"], stage="ready" if status == ORDER_READY else "closed",
-                                       status=status)
-                if order:
-                    self.notify_orderer(order, "Snídaně je připravená k vyzvednutí"
-                                        + (f" (číslo {order['order_number']})." if order.get("order_number") else "."))
-            elif status == ORDER_CLOSED:
-                self.set_order(only_id=order["id"], stage="closed", status=status)
-            elif status == ORDER_CANCELLED:
-                order = self.set_order(only_id=order["id"], stage="cancelled", status=status)
-                if order:
-                    self.notify_orderer(order, "Obchod objednávku zrušil"
-                                        + (f" (číslo {order['order_number']})." if order.get("order_number") else "."))
+            self.follow_picked_up(order, found, lambda **changes: self.set_order(only_id=order["id"], **changes))
 
     def notify_orderer(self, order: dict, message: str, url: str | None = None) -> None:
         """Progress goes only to the admin who placed the order, on their phone."""
@@ -902,7 +977,7 @@ class App:
         return {"set": chosen_set["index"], "drink": drink["index"], "temp": temp, "size": size}, ""
 
     def previous_choice(self, user_id: str) -> dict | None:
-        """The member's last pick from an earlier day, described on today's menu, or None.
+        """The member's last ordered pick (also from today's earlier round), described on today's menu, or None.
 
         {"choice", "title", "set", "drink", "price", "error"}; error says why it cannot be
         picked today (sold out, no longer on the menu), else "".
@@ -918,7 +993,9 @@ class App:
         except IdingError:
             return None
         day = date.fromisoformat(entry["date"])
-        if day == self.today() - timedelta(days=1):
+        if day == self.today():
+            title = "Jako naposledy" + (f" (dnes v {entry['at']})" if entry.get("at") else " (dnes)")
+        elif day == self.today() - timedelta(days=1):
             title = "Jako včera"
         else:
             weekday = ("po", "út", "st", "čt", "pá", "so", "ne")[day.weekday()]
@@ -1085,6 +1162,11 @@ class App:
         with self.lock:
             self.settings["last_daily"] = str(self.today())
             self.save_settings()
+            self.choices()
+            invited = self.invited
+        if invited:  # the admin already opened ordering today and the invitations went out
+            log("Denní oznámení přeskočeno: pozvánky už dnes odešly se zahájením objednávání.")
+            return
         try:
             users = self.users()
         except (OSError, RuntimeError) as exc:
@@ -1242,15 +1324,16 @@ class Handler(BaseHTTPRequestHandler):
             return {"id": f"dev-{name}", "name": name}
         h = self.headers
         return {
-            "id": h.get("X-Remote-User-Id", ""),
-            "name": h.get("X-Remote-User-Display-Name") or h.get("X-Remote-User-Name") or "neznámý",
+            "id": header_text(h.get("X-Remote-User-Id", "")),
+            "name": header_text(h.get("X-Remote-User-Display-Name") or h.get("X-Remote-User-Name") or "") or "neznámý",
         }
 
     def current_user(self) -> dict:
         """header_user plus is_admin, which needs the Home Assistant user list."""
         user = self.header_user()
         known = self.app.user(user["id"]) or {}
-        return {**user, "is_admin": known.get("is_admin", False)}
+        # The name from Home Assistant's user list is the reliable one; the header is a fallback.
+        return {**user, "name": known.get("name") or user["name"], "is_admin": known.get("is_admin", False)}
 
     def get_photo(self, index: str) -> None:
         """A set's photo (anyone who reaches the add-on through Ingress; they are not personal)."""
@@ -1274,15 +1357,18 @@ class Handler(BaseHTTPRequestHandler):
     def send_json(self, status: int, body) -> None:
         data = json.dumps(body, ensure_ascii=False).encode()
         if status >= 400:  # whatever the page shows as an error is in the log too
-            who = self.headers.get("X-Remote-User-Name") or self.headers.get("X-Remote-User-Display-Name") or ""
+            who = header_text(self.headers.get("X-Remote-User-Name") or self.headers.get("X-Remote-User-Display-Name") or "")
             error = body.get("error") if isinstance(body, dict) else body
             log(f"{self.command} {self.path.split('?')[0]} -> {status}" + (f" ({who})" if who else "") + f": {error}")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # the page went away meanwhile (reload, closed tab during a long poll); nothing to tell
 
     def read_json(self):
         length = int(self.headers.get("Content-Length") or 0)
@@ -1317,7 +1403,8 @@ class Handler(BaseHTTPRequestHandler):
                 .replace("{{TEST_HIDDEN}}", "" if view == "test" else "hidden")
                 .replace("{{TEST_BANNER_HIDDEN}}", "" if user.get("is_admin") and self.app.settings.get("test_mode") else "hidden")
                 .replace("{{NOT_MEMBER_HIDDEN}}", "" if view == "not_member" or (visible and not member) else "hidden")
-                .replace("{{MEMBER_HIDDEN}}", "" if member and visible else "hidden")
+                # Before opening, members may already browse and pick; saving waits for the opening.
+                .replace("{{MEMBER_HIDDEN}}", "" if member and view in ("open", "closed") else "hidden")
             )
             data = page.encode()
             self.send_response(200)
@@ -1370,6 +1457,8 @@ class Handler(BaseHTTPRequestHandler):
             self.guarded(lambda user: self.order_action(user, self.app.retry_payment), admin=True)
         elif route == "/api/admin/confirm_payment":
             self.guarded(lambda user: self.order_action(user, self.app.confirm_payment), admin=True)
+        elif route == "/api/admin/new_round":
+            self.guarded(lambda user: self.order_action(user, lambda: self.app.new_round(user["name"])), admin=True)
         elif route == "/api/admin/reset_order":
             self.guarded(lambda user: self.order_action(user, lambda: self.app.reset_order(user["name"])), admin=True)
         elif route == "/api/admin/cancel_order":
@@ -1418,7 +1507,9 @@ class Handler(BaseHTTPRequestHandler):
     def status(self, user: dict) -> dict:
         view = self.app.view(user)
         if view != "open":  # ordering not started, test mode or not a member: nothing about anyone
-            return {"view": view, "ticker": [], "mine": None, "previous": None, "locked": False,
+            # Browsing before the opening offers the member's own last pick ("Jako včera"), nothing else.
+            previous = self.app.previous_choice(user["id"]) if view == "closed" else None
+            return {"view": view, "ticker": [], "mine": None, "previous": previous, "locked": False,
                     "stage": None, "pickup": ""}
         with self.app.lock:
             mine = self.app.choices().get(user["id"])
@@ -1431,6 +1522,7 @@ class Handler(BaseHTTPRequestHandler):
             "mine": mine,
             "previous": self.app.previous_choice(user["id"]) if self.app.is_member(user["id"]) else None,
             "locked": locked,
+            "tip": self.app.settings.get("daily_tip", ""),
             # For the ticker: how far today's order got, and when it is picked up.
             "stage": order.get("stage"),
             "pickup": (order.get("target_time") or "")[-5:],
@@ -1492,12 +1584,11 @@ class Handler(BaseHTTPRequestHandler):
         self.get_order(user)
 
     def post_open(self, user: dict) -> None:
-        invite = self.app.open_ordering(user["name"])
-        log(f"{user['name']} zahájil objednávání.")
+        invite = bool((self.read_json() or {}).get("invite", True))
+        self.app.open_ordering(user["name"], invite)
+        log(f"{user['name']} zahájil objednávání" + ("." if invite else " bez pozvánek."))
         if invite:  # in the background: a slow phone must not hold up the page
             threading.Thread(target=self.app.invite_members, args=(user["id"],), daemon=True).start()
-        else:
-            log("Pozvánky se dnes už posílaly, znovu se neposílají.")
         self.get_order(user)
 
     def post_clear(self, user: dict) -> None:
@@ -1576,6 +1667,7 @@ class Handler(BaseHTTPRequestHandler):
             "daily_notification_time": app.settings["daily_notification_time"],
             "notification_phrases": app.settings["notification_phrases"],
             "page_phrases": app.settings["page_phrases"],
+            "daily_tip": app.settings.get("daily_tip", ""),
             "ticker_chosen_phrases": app.settings["ticker_chosen_phrases"],
             "ticker_pending_phrases": app.settings["ticker_pending_phrases"],
             "notify_admin_ready": app.settings["notify_admin_ready"],
@@ -1605,6 +1697,7 @@ class Handler(BaseHTTPRequestHandler):
             for key in ("notification_phrases", "page_phrases", "ticker_chosen_phrases", "ticker_pending_phrases"):
                 settings[key] = clean_lines(body.get(key))
             settings["notify_admin_ready"] = bool(body.get("notify_admin_ready"))
+            settings["daily_tip"] = str(body.get("daily_tip") or "").strip()[:1000]
             if bool(body.get("test_mode")) != bool(settings.get("test_mode")):
                 log("Testovací režim " + ("zapnut." if body.get("test_mode") else "vypnut."))
             settings["test_mode"] = bool(body.get("test_mode"))

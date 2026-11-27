@@ -9,25 +9,25 @@ bez nové verze.
 Tahle složka v repozitáři je pro fotky, které na GitHubu být můžou. Po přidání fotky sem je potřeba
 zvýšit `version` v `../config.yaml`, commitnout, pushnout a doplněk aktualizovat.
 
-Fotka z Home Assistantu má přednost před fotkou odsud a obě před fotkou z idingu. Soubor pojmenuj podle
+Fotka z Home Assistantu má přednost před fotkou odsud. Set bez vlastní fotky je bez náhledu. Soubor pojmenuj podle
 setu, podle tabulky níže, s příponou `.jpg`, `.jpeg`, `.png` nebo `.webp`. Stránka ukáže fotku jako
 čtvercový náhled (oříznutý na střed) a po ťuknutí celou. Ideálně 1200 × 900 px, JPEG kolem 80 %.
 
-| Set | Soubor | Fotka na idingu |
-| --- | --- | --- |
-| Dánský toast s vepřovým | `dansky-toast-s-veprovym.jpg` | ano |
-| Nudle zhajiang | `nudle-zhajiang.jpg` | – |
-| Francouzský toast | `francouzsky-toast.jpg` | – |
-| Kuřecí stehno | `kureci-stehno.jpg` | – |
-| Velký sytý set | `velky-syty-set.jpg` | – |
-| Čínský set | `cinsky-set.jpg` | – |
-| Lehký set | `lehky-set.jpg` | – |
-| Dětský set | `detsky-set.jpg` | ano |
-| Hovězí burger | `hovezi-burger.jpg` | – |
-| Bageta s omeletou | `bageta-s-omeletou.jpg` | – |
-| Nudle s houbovou omáčkou | `nudle-s-houbovou-omackou.jpg` | – |
-| Nudle s černým pepřem | `nudle-s-cernym-peprem.jpg` | – |
-| Nudle zhajiang, malé | `nudle-zhajiang-male.jpg` | – |
+| Set | Soubor |
+| --- | --- |
+| Dánský toast s vepřovým | `dansky-toast-s-veprovym.jpg` |
+| Nudle zhajiang | `nudle-zhajiang.jpg` |
+| Francouzský toast | `francouzsky-toast.jpg` |
+| Kuřecí stehno | `kureci-stehno.jpg` |
+| Velký sytý set | `velky-syty-set.jpg` |
+| Čínský set | `cinsky-set.jpg` |
+| Lehký set | `lehky-set.jpg` |
+| Dětský set | `detsky-set.jpg` |
+| Hovězí burger | `hovezi-burger.jpg` |
+| Bageta s omeletou | `bageta-s-omeletou.jpg` |
+| Nudle s houbovou omáčkou | `nudle-s-houbovou-omackou.jpg` |
+| Nudle s černým pepřem | `nudle-s-cernym-peprem.jpg` |
+| Nudle zhajiang, malé | `nudle-zhajiang-male.jpg` |
 
 Název souboru je český název setu bez diakritiky, malými písmeny a s pomlčkami místo mezer.
 Nový set, který v tabulce není, se pojmenuje stejně.
