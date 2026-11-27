@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.18.2
+
+- Dashboard Snídaně TV: nahoře aktuální čas a den, dole ovládání přehrávače Spotify. Dashboard se
+  při startu přepíše na nové rozvržení (pokud má značku `jinhua47_breakfast_layout`).
+- Ukazatel postupu na dashboardu ve stylu idingu: Otevřeno → Vybráno → Objednáno → K vyzvednutí,
+  šedě dokud se čeká, zeleně s datem a časem, když je krok hotový; zrušená objednávka jedním řádkem.
+  Je to vlastní karta `custom:jinhua47-progress-card`, kterou doplněk sám zaregistruje jako zdroj
+  dashboardů (skript přímo v `data:` URL, takže nepotřebuje přístup ke konfiguraci Home Assistantu).
+- Objednávka si pamatuje, kdy dosáhla kterého stavu (`stage_times`); v senzoru jako `steps`
+  a `cancelled_at`.
+
 ## 0.18.1
 
 - Oprava sestavení: `settleup.py` a `tv.py` chyběly v `.dockerignore`, takže se 0.17.0 a 0.18.0

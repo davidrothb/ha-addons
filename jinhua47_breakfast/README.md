@@ -133,8 +133,14 @@ Stav entity: `idle` (objednávání nezačalo), `choosing` (vybírá se), `appro
 dál stav objednávky `ordered`, `awaiting_payment`, `paid`, `ready`, `closed`, `cancelled`. Atributy:
 `emoji`, `headline`, `detail` (hotové texty k zobrazení), `picks` (`name`, `text`), `pending` (jména),
 `chosen_count`, `member_count`, `groups` (`quantity`, `text`), `items`, `total`, `pickup_time`,
-`order_number`, `ordered_by`, `earlier` (dřívější kola dne), `tip`, `test_mode`. Entitu jde použít
+`order_number`, `ordered_by`, `earlier` (dřívější kola dne), `tip`, `test_mode`, `steps`, `cancelled_at`. Entitu jde použít
 i v automatizacích (např. `trigger: state` na `ready`).
+
+Ukazatel postupu (Otevřeno → Vybráno → Objednáno → K vyzvednutí) je vlastní karta
+`custom:jinhua47-progress-card` ([`progress-card.js`](progress-card.js)). Doplněk ji při startu
+zaregistruje jako zdroj dashboardů (Nastavení → Dashboardy → ⋮ → Zdroje) se skriptem přímo v `data:`
+URL a při změně v nové verzi ji aktualizuje. Data bere z atributů `steps` (`label`, `done`, `date`,
+`time`) a `cancelled_at`.
 
 Rozvržení dashboardu je v [`tv.py`](tv.py). Když se v nové verzi změní, doplněk dashboard přepíše.
 Chceš-li ho upravit po svém, smaž v editoru kódu dashboardu řádek `jinhua47_breakfast_layout: …`:
@@ -174,6 +180,7 @@ v obchodě s doplňky dej **⋮ → Zkontrolovat aktualizace** a doplněk se obj
 
 - [ ] Hodnocení jídel hvězdičkami: každý strávník ohodnotí svou dnešní snídani.
 - [ ] Celkové statistiky útraty (celkem i po lidech) s ekvivalentem útraty.
-- [ ] Dashboard v Home Assistantu.
-- [ ] Část dashboardu na Google Cast (zobrazení na Chromecastu nebo Nest Hubu).
+- [x] Dashboard v Home Assistantu.
+- [x] Část dashboardu na Google Cast (zobrazení na Chromecastu nebo Nest Hubu).
+- [ ] Volba přehrávače (entita Spotify) pro dashboard Snídaně TV v nastavení doplňku; teď je natvrdo v `tv.py`.
 - [x] Integrace se Settle Up: po zaplacení zapsat útratu, kdo platil a kolik dluží ostatní.

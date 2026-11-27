@@ -3,15 +3,27 @@
 The add-on keeps sensor.jinhua47_breakfast up to date (state = how far today's order got, attributes =
 what the dashboard shows) and creates the dashboard itself on start. Casting it (cast.show_lovelace_view)
 is left to the user's own automations.
+
+The progress bar is a small custom card (progress-card.js), registered as a dashboard resource with
+the script itself in a data: URL. So it needs no file in Home Assistant's config (no access to it), and
+a Chromecast loads it like any other resource (it could not load it through the add-on's ingress).
 """
+
+import base64
+from pathlib import Path
 
 ENTITY_ID = "sensor.jinhua47_breakfast"
 DASHBOARD_PATH = "snidane-tv"  # Home Assistant wants a hyphen in a dashboard's url_path
 VIEW_PATH = "stav"
 # Bump when the layout below changes: the dashboard is rewritten once on the next start, unless the
 # user removed MARKER from it (then it is theirs and stays as it is).
-LAYOUT_VERSION = 1
+LAYOUT_VERSION = 2
 MARKER = "jinhua47_breakfast_layout"
+MEDIA_PLAYER = "media_player.spotify_david_rothbauer"  # media-control card at the bottom
+CARD_SOURCE = Path(__file__).parent / "progress-card.js"
+CARD_TYPE = "custom:jinhua47-progress-card"
+# Our resource is recognised by this prefix (the card= parameter is ignored by browsers).
+CARD_URL_PREFIX = "data:text/javascript;charset=utf-8;card=jinhua47-progress-card;base64,"
 STATE_REFRESH_SECONDS = 60  # also re-creates the sensor soon after Home Assistant restarts and forgets it
 
 # state: (emoji, headline)
@@ -27,10 +39,50 @@ HEADLINES = {
     "cancelled": ("❌", "Objednávka je zrušená"),
 }
 
+# The progress bar's steps; each is green once reached, grey until then.
+STEPS = ("Otevřeno", "Vybráno", "Objednáno", "K vyzvednutí")
+ORDER_SENT = ("ordered", "awaiting_payment", "paid", "ready", "closed")
+
+
+def _when_text(stamp: str) -> dict:
+    """{"date": "MM/DD", "time": "HH:MM"} from "YYYY-MM-DD HH:MM"."""
+    if len(stamp) < 16:
+        return {"date": "", "time": ""}
+    return {"date": f"{stamp[5:7]}/{stamp[8:10]}", "time": stamp[11:16]}
+
+
+def progress_steps(day: str, opened: dict | None, approved: dict | None, order: dict) -> tuple[list[dict], str]:
+    """Today's progress bar: [{label, done, date, time}] (empty before ordering opens), and
+    "MM/DD HH:MM" when the order was cancelled. day is today ("YYYY-MM-DD"); opened and approved
+    carry only "HH:MM". A step reached without a known time (e.g. picked up without being marked
+    ready first, or ordering closed again after approval) is done without a time."""
+    stage = order.get("stage")
+    times = order.get("stage_times") or {}
+    if stage == "cancelled":
+        when = _when_text(times.get("cancelled", ""))
+        return [], f"{when['date']} {when['time']}".strip()
+    ordered_at = times.get("ordered") or (f"{day} {order['at']}" if order.get("at") else "")
+    reached = (
+        (bool(opened or approved or stage), f"{day} {opened['at']}" if (opened or {}).get("at") else ""),
+        (bool(approved or stage), f"{day} {approved['at']}" if (approved or {}).get("at") else ""),
+        (stage in ORDER_SENT, ordered_at),
+        (stage in ("ready", "closed"), times.get("ready") or times.get("closed") or ""),
+    )
+    if not reached[0][0]:
+        return [], ""
+    return [
+        {"label": label, "done": done, **_when_text(at if done else "")}
+        for label, (done, at) in zip(STEPS, reached)
+    ], ""
+
+
 _E = f"{{% set e = '{ENTITY_ID}' %}}"
 
 _HEADLINE_CARD = _E + """
 <center>
+
+# 🕗 {{ now().strftime('%H:%M') }}
+{{ ['pondělí', 'úterý', 'středa', 'čtvrtek', 'pátek', 'sobota', 'neděle'][now().weekday()] }} {{ now().day }}. {{ now().month }}.
 
 # {{ state_attr(e, 'emoji') or '🥐' }} {{ state_attr(e, 'headline') or 'Snídaně' }}
 
@@ -88,8 +140,8 @@ def _when(states: list[str], card: dict) -> dict:
 
 
 def dashboard_config() -> dict:
-    """The dashboard: one full-screen view (good for casting) with the headline on top, below it who
-    picked what while choosing, and what is ordered once approved."""
+    """The dashboard: one full-screen view (good for casting) with the time and headline on top, below
+    it who picked what while choosing, what is ordered once approved, and the music player at the bottom."""
     return {
         MARKER: LAYOUT_VERSION,
         "title": "Snídaně TV",
@@ -102,11 +154,14 @@ def dashboard_config() -> dict:
                 "type": "vertical-stack",
                 "cards": [
                     _markdown(_HEADLINE_CARD),
+                    _when(["choosing", "approved", *ORDER_SENT, "cancelled"],
+                          {"type": CARD_TYPE, "entity": ENTITY_ID}),
                     _when(["choosing"], {
                         "type": "horizontal-stack",
                         "cards": [_markdown(_CHOSEN_CARD), _markdown(_PENDING_CARD)],
                     }),
                     _when(["approved", "ordered", "awaiting_payment", "paid", "ready"], _markdown(_ORDER_CARD)),
+                    {"type": "media-control", "entity": MEDIA_PLAYER},
                 ],
             }],
         }],
@@ -115,7 +170,31 @@ def dashboard_config() -> dict:
 
 def ensure_dashboard(ws, log) -> None:
     """Create the dashboard when it is missing and write its layout when it is new or older than
-    LAYOUT_VERSION. ws(*commands) runs websocket commands (raises RuntimeError on failure)."""
+    LAYOUT_VERSION, then register the progress card. ws(*commands) runs websocket commands
+    (raises RuntimeError on failure)."""
+    ensure_layout(ws, log)
+    try:  # Home Assistant answered above, so a failure here is not worth retrying
+        register_card(ws, log)
+    except (OSError, RuntimeError) as exc:
+        log(f"Kartu stavu objednávky se nepodařilo zaregistrovat: {exc}")
+
+
+def register_card(ws, log) -> None:
+    """Register progress-card.js as a dashboard resource (a data: URL holding the script), or update
+    it when the card changed in a new version."""
+    url = CARD_URL_PREFIX + base64.b64encode(CARD_SOURCE.read_bytes()).decode()
+    (resources,) = ws({"type": "lovelace/resources"})
+    mine = next((r for r in resources if str(r.get("url", "")).startswith(CARD_URL_PREFIX)), None)
+    if mine is None:
+        ws({"type": "lovelace/resources/create", "res_type": "module", "url": url})
+        log("Karta stavu objednávky zaregistrována jako zdroj dashboardů.")
+    elif mine.get("url") != url:
+        ws({"type": "lovelace/resources/update", "resource_id": mine["id"], "res_type": "module", "url": url})
+        log("Karta stavu objednávky aktualizována.")
+
+
+def ensure_layout(ws, log) -> None:
+    """The dashboard and its layout (see ensure_dashboard)."""
     (dashboards,) = ws({"type": "lovelace/dashboards/list"})
     if not any(d.get("url_path") == DASHBOARD_PATH for d in dashboards):
         ws({

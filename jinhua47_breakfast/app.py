@@ -258,6 +258,17 @@ def daily_assignment(today: date, kind: str, user_ids: tuple[str, ...], items: t
     return {user_id: items[index] for user_id, index in previous.items()}
 
 
+def stamp_stage(order: dict, before: str | None) -> dict:
+    """Record when the order reached its stage ("YYYY-MM-DD HH:MM" in stage_times), for the progress
+    bar on the TV dashboard. A new order (stage ordered) starts its times afresh."""
+    stage = order.get("stage")
+    if stage and stage != before:
+        now = datetime.now(TZ).strftime("%Y-%m-%d %H:%M")
+        times = {} if stage == "ordered" else dict(order.get("stage_times") or {})
+        order["stage_times"] = {**times, stage: now}
+    return order
+
+
 def is_paid(found: dict | None) -> bool:
     """Whether an order from the iding history is paid: payment_status 2, or already past payment
     (sent / ready / closed; an unpaid LINE Pay order shows order_status 101)."""
@@ -664,7 +675,7 @@ class App:
             if only_id is not None and (self.order or {}).get("id") != only_id:
                 return {}
             before = (self.order or {}).get("stage")
-            self.order = {**(self.order or {}), **changes}
+            self.order = stamp_stage({**(self.order or {}), **changes}, before)
             self.save_choices()
             order = dict(self.order)
             items = (self.approved or {}).get("items")
@@ -949,7 +960,7 @@ class App:
             for index, order in enumerate(self.earlier_orders):
                 if order.get("id") == order_id:
                     before = order.get("stage")
-                    order = self.earlier_orders[index] = {**order, **changes}
+                    order = self.earlier_orders[index] = stamp_stage({**order, **changes}, before)
                     self.save_choices()
                     break
             else:
@@ -1238,6 +1249,7 @@ class App:
         if self.settings.get("test_mode"):
             detail = (detail + " · " if detail else "") + "testovací režim"
         emoji, headline = tv.HEADLINES.get(state, ("🥐", "Snídaně"))
+        steps, cancelled_at = tv.progress_steps(str(self.today()), opened, approved or None, order)
         earlier_texts = [{
             "order_number": o.get("order_number") or "",
             "stage": o["stage"],
@@ -1267,6 +1279,8 @@ class App:
                 "order_number": number,
                 "ordered_by": order.get("by") or "",
                 "earlier": earlier_texts,
+                "steps": steps,
+                "cancelled_at": cancelled_at,
                 "tip": (self.settings.get("daily_tip") or "").strip(),
             },
         }
