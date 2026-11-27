@@ -55,6 +55,9 @@ ALERT_DATA = {
 PHOTOS_DIR = HERE / "photos"
 PHOTO_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
 PAGE = HERE / "index.html"
+# Changes with every new page: an open page that sees a different one in /api/wait reloads itself,
+# so nobody keeps clicking an old page's buttons after an update.
+PAGE_BUILD = hashlib.sha256(PAGE.read_bytes()).hexdigest()[:12] if PAGE.exists() else ""
 ADMIN_GROUP = "system-admin"
 CACHE_SECONDS = 60
 ORDER_WATCH_SECONDS = int(os.environ.get("ORDER_WATCH_SECONDS", "60"))  # how often a paid order is checked
@@ -93,7 +96,6 @@ DEFAULT_SETTINGS = {
     "ticker_pending_phrases": ["pořád neví, co chce.", "zdržuje celou výpravu.", "ještě spí?"],
     # Tell admins (on their phone) once everyone else has chosen and the order waits for them.
     "notify_admin_ready": True,
-    "test_mode": False,  # only admins see anything; everyone else gets a "Testovací režim" screen
     # Settle Up: after payment the order goes there as an expense paid by whoever ordered. Sandbox and
     # live are separate (own API key, account, group and member ids); "environment" says which is used.
     "settleup": {"enabled": False, "environment": "sandbox"},
@@ -318,6 +320,8 @@ class App:
         if "members" not in stored:  # up to 0.5.0 everyone was listed; keep those already set up
             self.settings["members"] = list(dict.fromkeys([*self.settings["phones"], *self.settings["nicknames"]]))
         self.migrate_options(stored)
+        if self.settings.pop("test_mode", None) is not None:  # test mode was removed in 0.18.3
+            self.save_settings()
         self.lock = threading.Lock()
         self.panel_path = ""  # sidebar URL of this add-on, used as the notification tap target
         self._users: tuple[float, list] = (0.0, [])
@@ -415,12 +419,10 @@ class App:
 
     def view(self, user: dict) -> str:
         """What the page shows the user: "open" (nickname, phrases, ticker, menu), "closed" (ordering
-        not started: a notice and the menu to browse, nothing can be saved), or only a notice: "test"
-        (test mode) or "not_member". Admins always get "open"."""
+        not started: a notice and the menu to browse, nothing can be saved), or only a notice:
+        "not_member". Admins always get "open"."""
         if user.get("is_admin"):
             return "open"
-        if self.settings.get("test_mode"):
-            return "test"
         if not self.is_member(user["id"]):
             return "not_member"
         return "open" if self.is_open() else "closed"
@@ -463,9 +465,6 @@ class App:
                 continue
             if not phone:
                 skipped.append(f"{user['name']} (nemá telefon)")
-                continue
-            if self.settings.get("test_mode") and not user["is_admin"]:
-                skipped.append(f"{user['name']} (testovací režim)")
                 continue
             title = self.notification_message(user_id, user["name"])
             try:
@@ -1246,8 +1245,6 @@ class App:
             "closed": "",
             "cancelled": "",
         }.get(state, "")
-        if self.settings.get("test_mode"):
-            detail = (detail + " · " if detail else "") + "testovací režim"
         emoji, headline = tv.HEADLINES.get(state, ("🥐", "Snídaně"))
         steps, cancelled_at = tv.progress_steps(str(self.today()), opened, approved or None, order)
         earlier_texts = [{
@@ -1266,7 +1263,6 @@ class App:
                 "emoji": emoji,
                 "headline": headline,
                 "detail": detail,
-                "test_mode": bool(self.settings.get("test_mode")),
                 "opened_at": (opened or {}).get("at", ""),
                 "member_count": len(members),
                 "chosen_count": len(picks),
@@ -1415,13 +1411,10 @@ class App:
             log(f"Seznam uživatelů se nenačetl, oznámení použijí jen přezdívky: {exc}")
             users = []
         names = {u["id"]: u["name"] for u in users}
-        admins = {u["id"] for u in users if u.get("is_admin")}
         phones = self.settings["phones"]
         for user_id, service in [(m, phones[m]) for m in self.settings["members"] if m in phones]:
             if names and user_id not in names:
                 continue  # deleted in Home Assistant; the admin sees it marked on the page
-            if self.settings.get("test_mode") and user_id not in admins:
-                continue  # test mode: nobody but the admins hears from the add-on
             try:
                 self.send_notification(service, self.notification_message(user_id, names.get(user_id, "")),
                                        who=f"denní {names.get(user_id, user_id)}")
@@ -1642,8 +1635,6 @@ class Handler(BaseHTTPRequestHandler):
                 .replace("{{VIEW}}", view)
                 .replace("{{VISIBLE_HIDDEN}}", "" if visible else "hidden")
                 .replace("{{CLOSED_HIDDEN}}", "" if view == "closed" else "hidden")
-                .replace("{{TEST_HIDDEN}}", "" if view == "test" else "hidden")
-                .replace("{{TEST_BANNER_HIDDEN}}", "" if user.get("is_admin") and self.app.settings.get("test_mode") else "hidden")
                 .replace("{{NOT_MEMBER_HIDDEN}}", "" if view == "not_member" or (visible and not member) else "hidden")
                 # Before opening, members may already browse and pick; saving waits for the opening.
                 .replace("{{MEMBER_HIDDEN}}", "" if member and view in ("open", "closed") else "hidden")
@@ -1744,7 +1735,7 @@ class Handler(BaseHTTPRequestHandler):
             seen = int(query.get("v", "-1"))
         except ValueError:
             seen = -1
-        self.send_json(200, {"v": self.app.wait_for_change(seen, WAIT_SECONDS)})
+        self.send_json(200, {"v": self.app.wait_for_change(seen, WAIT_SECONDS), "build": PAGE_BUILD})
 
     def get_status(self, user: dict) -> None:
         """The ticker for everyone, plus the caller's own choice for today."""
@@ -1763,7 +1754,6 @@ class Handler(BaseHTTPRequestHandler):
             order = self.app.order or {}
         return {
             "view": view,
-            "test_mode": bool(self.app.settings.get("test_mode")),
             "ticker": self.app.ticker(),
             "mine": mine,
             "previous": self.app.previous_choice(user["id"]) if self.app.is_member(user["id"]) else None,
@@ -1778,9 +1768,6 @@ class Handler(BaseHTTPRequestHandler):
         """Save the caller's pick for today, or drop it with {"clear": true}, until the admin approves."""
         app = self.app
         view = app.view(user)
-        if view == "test":
-            self.send_json(409, {"error": "Doplněk je v testovacím režimu."})
-            return
         if not app.is_member(user["id"]):
             self.send_json(403, {"error": "Vybírat můžou jen strávníci."})
             return
@@ -1830,7 +1817,10 @@ class Handler(BaseHTTPRequestHandler):
         self.get_order(user)
 
     def post_open(self, user: dict) -> None:
-        invite = bool((self.read_json() or {}).get("invite", True))
+        # Invitations only when the page asks for them (its dialog); a request without the choice,
+        # e.g. from a page loaded before 0.16.0, opens ordering without sending any.
+        body = self.read_json()
+        invite = isinstance(body, dict) and body.get("invite") is True
         self.app.open_ordering(user["name"], invite)
         log(f"{user['name']} zahájil objednávání" + ("." if invite else " bez pozvánek."))
         if invite:  # in the background: a slow phone must not hold up the page
@@ -1917,7 +1907,6 @@ class Handler(BaseHTTPRequestHandler):
             "ticker_chosen_phrases": app.settings["ticker_chosen_phrases"],
             "ticker_pending_phrases": app.settings["ticker_pending_phrases"],
             "notify_admin_ready": app.settings["notify_admin_ready"],
-            "test_mode": bool(app.settings.get("test_mode")),
             # The password never leaves the add-on; the page only learns whether one is set.
             "iding": {
                 "phone": app.settings["iding"]["phone"],
@@ -1965,9 +1954,6 @@ class Handler(BaseHTTPRequestHandler):
                 settings[key] = clean_lines(body.get(key))
             settings["notify_admin_ready"] = bool(body.get("notify_admin_ready"))
             settings["daily_tip"] = str(body.get("daily_tip") or "").strip()[:1000]
-            if bool(body.get("test_mode")) != bool(settings.get("test_mode")):
-                log("Testovací režim " + ("zapnut." if body.get("test_mode") else "vypnut."))
-            settings["test_mode"] = bool(body.get("test_mode"))
             iding = body.get("iding") or {}
             settings["iding"]["phone"] = str(iding.get("phone") or "").strip()
             if iding.get("password"):

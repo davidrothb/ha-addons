@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.18.3
+
+- Pozvánky odejdou jen tehdy, když je správce v okně „Zahájit objednávání“ výslovně zvolí. Dřív je
+  doplněk poslal i bez okna, když požadavek přišel ze stránky načtené před verzí 0.16.0 (třeba stránka
+  dlouho otevřená v aplikaci Home Assistant v telefonu), která o volbě nevěděla.
+- Otevřená stránka doplňku se po aktualizaci doplňku sama znovu načte (jakmile je vidět), takže už nikdo
+  neklikne na tlačítka staré verze.
+- Odebrán testovací režim (přepínač v nastavení, červený pruh a hláška pro strávníky). Uložené
+  nastavení se při startu smaže, takže zapnutý režim se sám vypne.
+
 ## 0.18.2
 
 - Dashboard Snídaně TV: nahoře aktuální čas a den, dole ovládání přehrávače Spotify. Dashboard se

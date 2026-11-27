@@ -46,8 +46,6 @@ Správci vidí v horní liště ozubené kolečko a pod ním nastavují:
 - **Denní oznámení:** čas (prázdné = vypnuto) a hlášky. Každý s přiřazeným telefonem dostane každý den
   `Ahoj <přezdívka>, <hláška>`. Po restartu se oznámení pošle, jen pokud od nastaveného času
   neuběhla víc než hodina.
-- **Testovací režim:** ostatní uvidí jen hlášku „Testovací režim“ a nemůžou vybírat; denní oznámení
-  dostanou jen správci. Správci vidí všechno a nahoře červený pruh.
 - **Oznámení správci:** když je zapnuté, správce dostane oznámení, jakmile mají vybráno všichni ostatní
   a chybí jen on, a pak když mají vybráno všichni a čeká se na schválení. Správce musí být mezi
   strávníky a mít přiřazený telefon.
@@ -133,7 +131,7 @@ Stav entity: `idle` (objednávání nezačalo), `choosing` (vybírá se), `appro
 dál stav objednávky `ordered`, `awaiting_payment`, `paid`, `ready`, `closed`, `cancelled`. Atributy:
 `emoji`, `headline`, `detail` (hotové texty k zobrazení), `picks` (`name`, `text`), `pending` (jména),
 `chosen_count`, `member_count`, `groups` (`quantity`, `text`), `items`, `total`, `pickup_time`,
-`order_number`, `ordered_by`, `earlier` (dřívější kola dne), `tip`, `test_mode`, `steps`, `cancelled_at`. Entitu jde použít
+`order_number`, `ordered_by`, `earlier` (dřívější kola dne), `tip`, `steps`, `cancelled_at`. Entitu jde použít
 i v automatizacích (např. `trigger: state` na `ready`).
 
 Ukazatel postupu (Otevřeno → Vybráno → Objednáno → K vyzvednutí) je vlastní karta

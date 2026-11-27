@@ -163,16 +163,11 @@
   /* Member rows: short name left, long choice right; the choice wraps. */
   #order-members .overview-row > :first-child { white-space: nowrap; }
   #order-members .overview-row > :last-child { white-space: normal; text-align: right; }
-  .test-banner {
-    padding: 6px 16px; text-align: center; font-weight: 700; font-size: 14px; letter-spacing: .04em;
-    text-transform: uppercase; color: #fff; background: #dc2626;
-  }
   [hidden] { display: none !important; }
 </style>
 </head>
 <body>
 <div class="topbar">
-<div id="test-banner" class="test-banner" {{TEST_BANNER_HIDDEN}}>Testovací režim</div>
 <header>
   <h1 id="title">Snídaně</h1>
   <button id="settings-toggle" class="icon-button" hidden aria-label="Nastavení" title="Nastavení">
@@ -186,10 +181,6 @@
 </div>
 
 <main id="home" data-view="{{VIEW}}">
-  <section id="test-note" class="hello" {{TEST_HIDDEN}}>
-    <h2>Testovací režim</h2>
-    <p class="phrase">Správce doplněk zrovna zkouší. Až skončí, objeví se tu zase objednávání.</p>
-  </section>
   <section id="closed-note" class="hello" {{CLOSED_HIDDEN}}>
     <h2>Objednávky zatím nejsou otevřené</h2>
   </section>
@@ -325,15 +316,6 @@
     </label>
     <p class="hint">Stejné hlášky dostanou strávníci i v oznámení po „Zahájit objednávání“
       (pod nimi „Klikni zde a objednej.“).</p>
-  </section>
-  <section class="form">
-    <h3>Testovací režim</h3>
-    <label class="check">
-      <input id="test-mode" type="checkbox">
-      Zapnout testovací režim
-    </label>
-    <p class="hint">Ostatní neuvidí nic, jen hlášku „Testovací režim“, a nemůžou vybírat. Denní oznámení
-      dostanou jen správci. Správci vidí všechno a nahoře červený pruh. Platí po uložení.</p>
   </section>
   <section class="form">
     <h3>Oznámení správci</h3>
@@ -603,7 +585,6 @@
     document.getElementById("ticker-chosen-phrases").value = data.ticker_chosen_phrases.join("\n");
     document.getElementById("ticker-pending-phrases").value = data.ticker_pending_phrases.join("\n");
     document.getElementById("notify-admin-ready").checked = data.notify_admin_ready;
-    document.getElementById("test-mode").checked = data.test_mode;
     document.getElementById("iding-phone").value = data.iding.phone;
     setPasswordPlaceholder(data.iding.password_set);
     suLoad(data.settleup);
@@ -661,7 +642,6 @@
         ticker_chosen_phrases: lines(document.getElementById("ticker-chosen-phrases").value),
         ticker_pending_phrases: lines(document.getElementById("ticker-pending-phrases").value),
         notify_admin_ready: document.getElementById("notify-admin-ready").checked,
-        test_mode: document.getElementById("test-mode").checked,
         iding: { phone: document.getElementById("iding-phone").value, password: passwordInput.value },
         settleup: suPayload(),
       });
@@ -1039,7 +1019,6 @@
       location.reload();
       return;
     }
-    if (data.test_mode !== undefined) document.getElementById("test-banner").hidden = !data.test_mode;
     const lockChanged = data.locked !== locked;
     locked = data.locked;
     // First entry of the ticker: how far today's order got (visible to everyone).
@@ -1352,7 +1331,14 @@
     return api("api/status").then(applyStatus).catch(() => {});
   }
   // Others' picks show up within half a minute, and right away when the app comes back.
-  const refresh = () => { if (!document.hidden) { loadStatus(); loadOrder(); } };
+  // Set when the add-on got a new page (an update): reloaded once the page is visible.
+  let stale = false;
+  const refresh = () => {
+    if (document.hidden) return;
+    if (stale) { location.reload(); return; }
+    loadStatus();
+    loadOrder();
+  };
   setInterval(refresh, 30000);
   document.addEventListener("visibilitychange", refresh);
 
@@ -1360,13 +1346,16 @@
   // or after ~25 s with nothing new; then ask again. The 30 s refresh above stays as a fallback.
   (async function live() {
     let version = -1;
+    let build = null;
     for (;;) {
       try {
         const query = (location.search ? location.search + "&" : "?") + "v=" + version;
         const response = await fetch("api/wait" + query);
         if (!response.ok) throw new Error(response.status);
-        const { v } = await response.json();
-        if (version !== -1 && v !== version) refresh();
+        const { v, build: current } = await response.json();
+        if (build && current && current !== build) stale = true;
+        build = build || current;
+        if (stale || (version !== -1 && v !== version)) refresh();
         version = v;
       } catch {
         await new Promise((r) => setTimeout(r, 5000)); // add-on restarting or offline
