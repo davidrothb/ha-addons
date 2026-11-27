@@ -182,5 +182,5 @@ v obchodě s doplňky dej **⋮ → Zkontrolovat aktualizace** a doplněk se obj
 - [ ] Celkové statistiky útraty (celkem i po lidech) s ekvivalentem útraty.
 - [x] Dashboard v Home Assistantu.
 - [x] Část dashboardu na Google Cast (zobrazení na Chromecastu nebo Nest Hubu).
-- [ ] Volba přehrávače (entita Spotify) pro dashboard Snídaně TV v nastavení doplňku; teď je natvrdo v `tv.py`.
+- [ ] Volba přehrávače (entita Spotify) a počasí pro dashboard Snídaně TV v nastavení doplňku; teď jsou natvrdo v `tv.py`.
 - [x] Integrace se Settle Up: po zaplacení zapsat útratu, kdo platil a kolik dluží ostatní.

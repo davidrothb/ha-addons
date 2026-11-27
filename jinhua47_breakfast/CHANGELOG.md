@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.18.7
+
+- Dashboard Snídaně TV pro obrazovku 16:9 (rozvržení 5, přepíše se při startu, pokud nebyl ručně
+  upravený): dva sloupce. Vlevo hodiny, stav objednávky, ukazatel postupu a počasí (`weather.home`,
+  hodinová předpověď), vpravo kdo co
+  vybral a kdo ještě ne, pak objednávka a pod tím přehrávač Spotify, který dřív vypadl pod okraj.
+- Aby se to vešlo na výšku: „Ještě nevybrali“ je jeden velký řádek se jmény, „Mají vybráno“ ukazuje
+  jen set a nápoj (bez teploty a velikosti; v senzoru nový klíč `short` u `picks`). Tip dne už na TV
+  není, místo něj je počasí.
+- Po uzavření výběru ukazuje karta objednávky, kdo si co dal (místo souhrnu stejných položek), bez
+  „objednal(a)“. Číslo objednávky a dřívější kola dne už TV neukazuje (v senzoru zůstávají).
+- Ukazatel postupu má víc místa po stranách.
+- Karty na TV mají tenký šedý rámeček (i když ho téma Home Assistantu vypíná).
+
 ## 0.18.6
 
 - Nová událost `jinhua47_breakfast_opened`, když správce zahájí objednávání (data `by`, `by_user_id`,

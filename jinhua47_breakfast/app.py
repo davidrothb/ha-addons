@@ -1235,8 +1235,9 @@ class App:
             if not choice:
                 pending.append(name)
                 continue
-            text = menu.describe(page_menu, choice)["text"] if page_menu else ""
-            picks.append({"name": name, "text": text})
+            info = menu.describe(page_menu, choice) if page_menu else {"text": "", "short": ""}
+            text = info["text"]
+            picks.append({"name": name, "text": text, "short": info["short"]})
             group = groups.setdefault(text, {"text": text, "quantity": 0})
             group["quantity"] += 1
         if order.get("stage"):
@@ -1256,7 +1257,7 @@ class App:
             "approved": "Čeká se na odeslání objednávky",
             "ordered": f"Vyzvednutí v {pickup}",
             "awaiting_payment": f"Vyzvednutí v {pickup}",
-            "paid": f"Vyzvednutí v {pickup}",  # the number has its own line on the TV
+            "paid": f"Vyzvednutí v {pickup}",
             "ready": "",
             "closed": "",
             "cancelled": cancelled_at,

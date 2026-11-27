@@ -260,11 +260,12 @@ def cart_items(raw: dict, picks: list[tuple[dict, int]]) -> tuple[list[dict], in
 
 
 def describe(menu: dict, choice: dict) -> dict:
-    """{"set", "drink", "text", "price"} for a saved choice, using the page menu from build_menu()."""
+    """{"set", "drink", "text", "short", "price"} for a saved choice, using the page menu from build_menu();
+    short is set + drink without temperature and size (for the TV)."""
     chosen_set = next((s for s in menu["sets"] if s["index"] == choice["set"]), None)
     drink = next((d for d in menu["drinks"] if d["index"] == choice["drink"]), None)
     if not chosen_set or not drink:
-        return {"text": "položka už v menu není", "price": 0}
+        return {"text": "položka už v menu není", "short": "položka už v menu není", "price": 0}
     size = drink["sizes"].get(choice["size"]) or {}
     temp = "teplé" if choice["temp"] == "hot" else "studené"
     size_name = "velké" if choice["size"] == "large" else "malé"
@@ -272,5 +273,6 @@ def describe(menu: dict, choice: dict) -> dict:
         "set": chosen_set["label"],
         "drink": f"{drink['label']}, {temp}, {size_name}",
         "text": f"{chosen_set['label']} + {drink['label']}, {temp}, {size_name}",
+        "short": f"{chosen_set['label']} + {drink['label']}",
         "price": chosen_set["price"] + drink["extra"] + (size.get("price") or 0),
     }

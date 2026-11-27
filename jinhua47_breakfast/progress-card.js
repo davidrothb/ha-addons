@@ -23,7 +23,7 @@ class Jinhua47ProgressCard extends HTMLElement {
       this.attachShadow({ mode: "open" });
       this.shadowRoot.innerHTML = `
         <style>
-          ha-card { padding: 20px 24px 24px; }
+          ha-card { padding: 24px 32px 28px; }
           h2 { margin: 0 0 24px; font-size: 1.6em; font-weight: 700; }
           .steps { display: grid; gap: 14px; }
           .bar { height: 8px; border-radius: 4px; background: var(--divider-color, #ddd); }
@@ -92,7 +92,9 @@ const WHITE_STYLE = `
     --secondary-text-color: #727272 !important;
     --disabled-text-color: #bdbdbd !important;
     --divider-color: rgba(0, 0, 0, 0.12) !important;
-    --ha-card-border-color: #e0e0e0 !important;
+    --ha-card-border-color: #9e9e9e !important;
+    --ha-card-border-width: 1px !important;
+    --ha-card-border-style: solid !important;
   }
   html, body, hc-main { background: #ffffff !important; }
 `;

@@ -17,9 +17,10 @@ DASHBOARD_PATH = "snidane-tv"  # Home Assistant wants a hyphen in a dashboard's 
 VIEW_PATH = "stav"
 # Bump when the layout below changes: the dashboard is rewritten once on the next start, unless the
 # user removed MARKER from it (then it is theirs and stays as it is).
-LAYOUT_VERSION = 4
+LAYOUT_VERSION = 5
 MARKER = "jinhua47_breakfast_layout"
 MEDIA_PLAYER = "media_player.spotify_david_rothbauer"  # media-control card at the bottom
+WEATHER = "weather.home"  # weather-forecast card at the bottom left
 CARD_SOURCE = Path(__file__).parent / "progress-card.js"
 CARD_TYPE = "custom:jinhua47-progress-card"
 WHITE_THEME_TYPE = "custom:jinhua47-white-theme"  # also in progress-card.js
@@ -85,56 +86,46 @@ _HEADLINE_CARD = _E + """
 ### {{ now().strftime('%H:%M') }} · {{ ['pondělí', 'úterý', 'středa', 'čtvrtek', 'pátek', 'sobota', 'neděle'][now().weekday()] }} {{ now().day }}. {{ now().month }}.
 
 # {{ state_attr(e, 'emoji') or '🥐' }} {{ state_attr(e, 'headline') or 'Snídaně' }}
-{% if states(e) in ['paid', 'ready'] and state_attr(e, 'order_number') %}
-# Číslo {{ state_attr(e, 'order_number') }}
-{% endif %}
 
 {% if state_attr(e, 'detail') %}
 ## {{ state_attr(e, 'detail') }}
 {% endif %}
 
-{% for o in state_attr(e, 'earlier') or [] %}
-{% if o.stage == 'ready' %}## {% endif %}{{ o.text }}
-
-{% endfor %}
-{% if state_attr(e, 'tip') %}
-> 💡 {{ state_attr(e, 'tip') }}
-{% endif %}
 </center>
 """
 
 _CHOSEN_CARD = _E + """
 ## Mají vybráno
 {% for p in state_attr(e, 'picks') or [] %}
-- **{{ p.name }}**: {{ p.text }}
+- **{{ p.name }}**: {{ p.short or p.text }}
 {% else %}
 Zatím nikdo.
 {% endfor %}
 """
 
-# One heading per name: these are what people look for on the TV from across the room.
+# The names on one large line: what people look for on the TV from across the room, in little height.
 _PENDING_CARD = _E + """
 ## Ještě nevybrali
-{% for name in state_attr(e, 'pending') or [] %}
-### {{ name }}
+{% if state_attr(e, 'pending') %}
+### {{ state_attr(e, 'pending') | join(', ') }}
 {% else %}
 Všichni mají vybráno 🥳
-{% endfor %}
+{% endif %}
 """
 
+# Who has what, so everyone finds their own breakfast at pickup.
 _ORDER_CARD = _E + """
 ## Objednávka
-{% for g in state_attr(e, 'groups') or [] %}
-### {{ g.quantity }}× {{ g.text }}
+{% for p in state_attr(e, 'picks') or [] %}
+- **{{ p.name }}**: {{ p.text }}
 {% endfor %}
 
 **{{ state_attr(e, 'items') or 0 }} ks, {{ state_attr(e, 'total') or 0 }} NT$**
-{%- if state_attr(e, 'ordered_by') %} · objednal(a) {{ state_attr(e, 'ordered_by') }}{% endif %}
 """
 
 
-def _markdown(content: str) -> dict:
-    return {"type": "markdown", "content": content.strip() + "\n"}
+def _markdown(content: str, **options) -> dict:
+    return {"type": "markdown", "content": content.strip() + "\n", **options}
 
 
 def _when(states: list[str], card: dict) -> dict:
@@ -145,9 +136,42 @@ def _when(states: list[str], card: dict) -> dict:
     }
 
 
+def _shown(entity: str, card: dict) -> dict:
+    """The card, hidden rather than a warning on the TV while its entity is unavailable (e.g. Spotify
+    logged out)."""
+    return {
+        "type": "conditional",
+        "conditions": [{"condition": "state", "entity": entity, "state_not": ["unavailable", "unknown"]}],
+        "card": card,
+    }
+
+
 def dashboard_config() -> dict:
-    """The dashboard: one full-screen view (good for casting) with the time and headline on top, below
-    it who picked what while choosing, what is ordered once approved, and the music player at the bottom."""
+    """The dashboard, for a 16:9 screen (a Chromecast renders it at about 1280×720): one full-screen
+    view in two columns. Left: the time, how far the order got, the progress bar and the weather. Right:
+    who picked what while choosing, what is ordered once approved, and the music player below."""
+    left = [
+        _markdown(_HEADLINE_CARD),
+        _when(["choosing", "approved", *ORDER_SENT],  # cancelled: the headline says it
+              {"type": CARD_TYPE, "entity": ENTITY_ID}),
+        _shown(WEATHER, {
+            "type": "weather-forecast",
+            "entity": WEATHER,
+            "show_current": True,
+            "show_forecast": True,
+            "forecast_type": "hourly",
+            "forecast_slots": 12,
+        }),
+    ]
+    right = [
+        _when(["choosing"], {
+            "type": "vertical-stack",
+            "cards": [_markdown(_CHOSEN_CARD), _markdown(_PENDING_CARD)],
+        }),
+        _when(["approved", "ordered", "awaiting_payment", "paid", "ready"], _markdown(_ORDER_CARD)),
+        _shown(MEDIA_PLAYER, {"type": "media-control", "entity": MEDIA_PLAYER}),
+        {"type": WHITE_THEME_TYPE},  # invisible: forces white over the HA theme
+    ]
     return {
         MARKER: LAYOUT_VERSION,
         "title": "Snídaně TV",
@@ -158,23 +182,10 @@ def dashboard_config() -> dict:
             "type": "panel",
             "background": "#ffffff",  # all white on the TV (the default theme's page is light grey)
             "cards": [{
-                "type": "vertical-stack",
+                "type": "horizontal-stack",
                 "cards": [
-                    _markdown(_HEADLINE_CARD),
-                    _when(["choosing", "approved", *ORDER_SENT],  # cancelled: the headline says it
-                          {"type": CARD_TYPE, "entity": ENTITY_ID}),
-                    _when(["choosing"], {
-                        "type": "horizontal-stack",
-                        "cards": [_markdown(_CHOSEN_CARD), _markdown(_PENDING_CARD)],
-                    }),
-                    _when(["approved", "ordered", "awaiting_payment", "paid", "ready"], _markdown(_ORDER_CARD)),
-                    {  # hidden rather than a warning on the TV when Spotify is logged out
-                        "type": "conditional",
-                        "conditions": [{"condition": "state", "entity": MEDIA_PLAYER,
-                                        "state_not": ["unavailable", "unknown"]}],
-                        "card": {"type": "media-control", "entity": MEDIA_PLAYER},
-                    },
-                    {"type": WHITE_THEME_TYPE},  # invisible: forces white over the HA theme
+                    {"type": "vertical-stack", "cards": left},
+                    {"type": "vertical-stack", "cards": right},
                 ],
             }],
         }],
