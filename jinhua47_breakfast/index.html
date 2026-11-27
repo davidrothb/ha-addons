@@ -231,6 +231,8 @@
       </div>
     </div>
     <p id="order-state" class="notice" hidden></p>
+    <p id="settleup-state" class="notice" hidden></p>
+    <button id="settleup-retry" class="secondary" hidden>Zapsat do Settle Up znovu</button>
     <button id="new-round" class="primary" hidden>Další kolo</button>
     <button id="reset-order" class="secondary" hidden>Resetovat objednávku v doplňku</button>
     <button id="approve" class="primary">Schválit a poslat do košíku</button>
@@ -377,6 +379,38 @@
     </div>
     <div id="iding-status" class="status" role="status"></div>
   </section>
+  <section class="form">
+    <h3>Settle Up</h3>
+    <label class="check">
+      <input id="su-enabled" type="checkbox">
+      Po zaplacení zapsat útratu do Settle Up
+    </label>
+    <p class="hint">Platí ten, kdo objednal; ostatní mu dluží cenu svého výběru. Útrata je v NT$ (TWD).</p>
+    <label class="field">Prostředí
+      <select id="su-env">
+        <option value="sandbox">Sandbox (testovací server)</option>
+        <option value="live">Live (skutečný Settle Up)</option>
+      </select>
+    </label>
+    <p class="hint" id="su-env-hint"></p>
+    <label class="field">Web API klíč
+      <input id="su-key" type="password" autocomplete="off">
+    </label>
+    <label class="field">E-mail účtu Settle Up
+      <input id="su-email" type="email" autocomplete="off">
+    </label>
+    <label class="field">Heslo
+      <input id="su-password" type="password" autocomplete="new-password">
+    </label>
+    <div class="actions">
+      <button id="su-load" class="secondary">Přihlásit a načíst skupiny</button>
+    </div>
+    <label class="field">Skupina
+      <select id="su-group"></select>
+    </label>
+    <div id="su-members" class="form"></div>
+    <div id="su-status" class="status" role="status"></div>
+  </section>
   <div class="save-bar">
     <button id="save" class="primary">Uložit</button>
     <div id="save-status" class="status" role="status"></div>
@@ -444,6 +478,7 @@
     const row = document.createElement("div");
     row.className = "user";
     row.dataset.user = user.id;
+    row.dataset.name = user.name;
 
     const head = document.createElement("div");
     head.className = "user-head";
@@ -471,8 +506,10 @@
     remove.className = "secondary";
     remove.textContent = "Odebrat";
     remove.addEventListener("click", () => {
+      suCollect();
       row.remove();
       if (!user.missing) addCandidate({ id: user.id, name: user.name });
+      suRenderMembers();
     });
     const actions = document.createElement("div");
     actions.className = "user-actions";
@@ -546,6 +583,8 @@
     );
     option.remove();
     refreshCandidates();
+    suCollect();
+    suRenderMembers();
   });
 
   async function loadSettings() {
@@ -567,6 +606,7 @@
     document.getElementById("test-mode").checked = data.test_mode;
     document.getElementById("iding-phone").value = data.iding.phone;
     setPasswordPlaceholder(data.iding.password_set);
+    suLoad(data.settleup);
     const admins = data.admins.join(", ") || "nikdo";
     document.getElementById("admins-hint").textContent = data.admins_from_option
       ? "Podle volby admins: " + admins + "."
@@ -623,8 +663,10 @@
         notify_admin_ready: document.getElementById("notify-admin-ready").checked,
         test_mode: document.getElementById("test-mode").checked,
         iding: { phone: document.getElementById("iding-phone").value, password: passwordInput.value },
+        settleup: suPayload(),
       });
       setPasswordPlaceholder(body.password_set);
+      suSaved(body.settleup);
       show(status, "ok", "Uloženo.");
       loadStatus(); // the test mode banner follows the saved setting
     } catch (err) {
@@ -632,6 +674,160 @@
     } finally {
       saveButton.disabled = false;
     }
+  });
+
+  // --- Settle Up: one account per environment, kept on the page until Save ---
+  // su[env]: stored values from the add-on, plus typed secrets and the loaded groups/members.
+  let su = null;
+  let suEnv = "sandbox";
+  const suEl = (id) => document.getElementById("su-" + id);
+  const SU_HINTS = {
+    sandbox: "Sandbox je oddělený testovací server (účet si založ na settle-up-sandbox-app.web.app). "
+      + "Klíč dostaneš po registraci aplikace na developers.settleup.io.",
+    live: "Live klíč vydá Settle Up na developers.settleup.io po otestování na sandboxu. "
+      + "Účet, skupina i členové jsou jiní než na sandboxu.",
+  };
+
+  function suLoad(data) {
+    su = data;
+    for (const env of ["sandbox", "live"]) Object.assign(su[env], { api_key: "", password: "", groups: null, memberList: null });
+    suEnv = data.environment;
+    suEl("enabled").checked = data.enabled;
+    suEl("env").value = suEnv;
+    suRender();
+    const account = su[suEnv];
+    if (account.api_key_set && account.password_set && account.email) suFetch(true);
+  }
+
+  function suSaved(data) {
+    for (const env of ["sandbox", "live"]) {
+      Object.assign(su[env], { api_key: "", password: "", api_key_set: data[env].api_key_set, password_set: data[env].password_set });
+    }
+    suRenderSecrets();
+  }
+
+  // Reads the visible inputs into su[suEnv] (before switching environment, saving or re-rendering).
+  function suCollect() {
+    if (!su) return;
+    const account = su[suEnv];
+    account.email = suEl("email").value.trim();
+    account.api_key = suEl("key").value.trim();
+    account.password = suEl("password").value;
+    const group = suEl("group").selectedOptions[0];
+    account.group_id = group ? group.value : "";
+    account.group_name = group && group.value ? group.dataset.name : "";
+    for (const select of suEl("members").querySelectorAll("select")) {
+      if (select.value) account.members[select.dataset.user] = select.value;
+      else delete account.members[select.dataset.user];
+    }
+  }
+
+  function suRenderSecrets() {
+    const account = su[suEnv];
+    suEl("key").value = account.api_key;
+    suEl("key").placeholder = account.api_key_set ? "uloženo – vyplň jen pro změnu" : "z developers.settleup.io";
+    suEl("password").value = account.password;
+    suEl("password").placeholder = account.password_set ? "uloženo – vyplň jen pro změnu" : "nevyplněno";
+  }
+
+  function suRender() {
+    const account = su[suEnv];
+    suEl("env-hint").textContent = SU_HINTS[suEnv];
+    suEl("email").value = account.email;
+    suRenderSecrets();
+    const groups = account.groups
+      || (account.group_id ? [{ id: account.group_id, name: account.group_name || account.group_id }] : []);
+    suEl("group").replaceChildren(new Option(groups.length ? "— vyber skupinu —" : "Nejdřív načti skupiny", ""),
+      ...groups.map((g) => {
+        const option = new Option(g.name + (g.currency ? " (" + g.currency + ")" : "")
+          + (g.level === 10 ? " – jen pro čtení" : ""), g.id);
+        option.dataset.name = g.name;
+        option.disabled = g.level === 10;
+        return option;
+      }));
+    suEl("group").value = account.group_id;
+    suRenderMembers();
+  }
+
+  // One select per member listed above: which Settle Up member they are.
+  function suRenderMembers() {
+    if (!su) return;
+    const account = su[suEnv];
+    const box = suEl("members");
+    const rows = [...document.querySelectorAll("#users .user")];
+    if (!account.group_id || !rows.length) {
+      box.replaceChildren();
+      return;
+    }
+    const list = account.memberList;
+    box.replaceChildren(...rows.map((row) => {
+      const select = document.createElement("select");
+      select.dataset.user = row.dataset.user;
+      select.append(new Option("— nepřiřazeno —", ""));
+      let current = account.members[row.dataset.user] || "";
+      if (list) {
+        for (const m of list) select.append(new Option(m.name, m.id));
+        // Unassigned: offer the Settle Up member with the same name.
+        const same = !current && list.find((m) => m.name.toLowerCase() === row.dataset.name.toLowerCase());
+        if (same) current = same.id;
+        if (current && !list.some((m) => m.id === current)) select.append(new Option("už ve skupině není", current));
+      } else if (current) {
+        select.append(new Option("uloženo (načti skupiny pro jména)", current));
+      }
+      select.value = current;
+      return field(row.dataset.name, select);
+    }));
+  }
+
+  async function suFetch(quiet = false) {
+    suCollect();
+    const env = suEnv;
+    const account = su[env];
+    const status = suEl("status");
+    suEl("load").disabled = true;
+    show(status, "", "Přihlašuji se do Settle Up…");
+    try {
+      const body = await post("api/admin/settleup_groups", {
+        environment: env, api_key: account.api_key, email: account.email, password: account.password,
+        group_id: account.group_id,
+      });
+      account.groups = body.groups;
+      account.memberList = account.group_id ? body.members : null;
+      if (env === suEnv) {
+        suRender();
+        show(status, quiet ? "" : "ok", quiet ? "" : "Přihlášení funguje (" + body.name + "), skupin: "
+          + body.groups.length + ". " + (account.group_id ? "Přiřaď strávníky a ulož." : "Vyber skupinu."));
+      }
+    } catch (err) {
+      if (env === suEnv) show(status, "err", err.message);
+    } finally {
+      suEl("load").disabled = false;
+    }
+  }
+
+  function suPayload() {
+    suCollect();
+    const strip = (a) => ({ email: a.email, api_key: a.api_key, password: a.password,
+      group_id: a.group_id, group_name: a.group_name, members: a.members });
+    return { enabled: suEl("enabled").checked, environment: suEnv, sandbox: strip(su.sandbox), live: strip(su.live) };
+  }
+
+  suEl("env").addEventListener("change", () => {
+    suCollect();
+    suEnv = suEl("env").value;
+    show(suEl("status"), "", "");
+    suRender();
+    const account = su[suEnv];
+    if (!account.groups && (account.api_key || account.api_key_set) && (account.password || account.password_set)
+        && account.email) suFetch(true);
+  });
+  suEl("load").addEventListener("click", () => suFetch());
+  suEl("group").addEventListener("change", () => {
+    suCollect();
+    su[suEnv].members = {}; // member ids belong to one group
+    su[suEnv].memberList = null;
+    suRenderMembers();
+    if (su[suEnv].group_id) suFetch();
   });
 
   // --- order: set → drink → temperature → size (stays on the page for now) ---
@@ -975,6 +1171,17 @@
     state.textContent = texts[stage] || "";
     document.getElementById("reset-order").hidden = !order;
     document.getElementById("new-round").hidden = !["paid", "ready", "closed"].includes(stage);
+    const settled = order && ["paid", "ready", "closed"].includes(stage) ? order.settleup : null;
+    const suState = document.getElementById("settleup-state");
+    suState.hidden = !settled;
+    if (settled) {
+      const where = settled.environment === "sandbox" ? " (sandbox)" : "";
+      suState.textContent = settled.id
+        ? "💸 Zapsáno do Settle Up" + where + ", skupina " + settled.group + "."
+        : "⚠️ Do Settle Up" + where + " se nezapsalo: " + settled.error;
+      suState.className = "notice" + (settled.id ? "" : " warn");
+    }
+    document.getElementById("settleup-retry").hidden = !settled || !!settled.id;
   }
 
   // The offered times move on with the clock and depend on the order size: reloaded every minute
@@ -1018,6 +1225,9 @@
     if (!confirm("Zrušit nezaplacenou objednávku na idingu?")) return;
     adminAction(event.currentTarget, "api/admin/cancel_order", "Ruším objednávku…");
   });
+
+  document.getElementById("settleup-retry").addEventListener("click", (event) =>
+    adminAction(event.currentTarget, "api/admin/settleup_retry", "Zapisuji do Settle Up…"));
 
   function loadOrder() {
     if (!isAdmin) return Promise.resolve();

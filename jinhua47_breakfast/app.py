@@ -35,6 +35,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import menu
 from iding import Iding, IdingError
+from settleup import SettleUp, SettleUpError
 
 SUPERVISOR = "http://supervisor"
 INGRESS_PROXY_IP = "172.30.32.2"
@@ -92,7 +93,11 @@ DEFAULT_SETTINGS = {
     # Tell admins (on their phone) once everyone else has chosen and the order waits for them.
     "notify_admin_ready": True,
     "test_mode": False,  # only admins see anything; everyone else gets a "Testovací režim" screen
+    # Settle Up: after payment the order goes there as an expense paid by whoever ordered. Sandbox and
+    # live are separate (own API key, account, group and member ids); "environment" says which is used.
+    "settleup": {"enabled": False, "environment": "sandbox"},
 }
+SETTLEUP_ACCOUNT = {"api_key": "", "email": "", "password": "", "group_id": "", "group_name": "", "members": {}}
 TICKER_EMOJI = {
     "chosen": ["👍", "✅", "😋", "👌", "🥳"],
     "pending": ["😠", "👎", "😤", "🙄", "😴"],
@@ -558,10 +563,12 @@ class App:
             if self.is_locked():
                 raise IdingError("Objednávka už je schválená.")
             picks: dict[tuple, list] = {}
+            picked: dict[str, dict] = {}
             for user_id in self.settings["members"]:
                 choice = self.choices().get(user_id)
                 if choice and user_id in names:
                     picks.setdefault((choice["set"], choice["drink"], choice["temp"], choice["size"]), [choice, 0])[1] += 1
+                    picked[user_id] = choice
         if not picks:
             raise IdingError("Zatím nikdo nemá vybráno.")
         account = self.settings["iding"]
@@ -571,9 +578,12 @@ class App:
         raw_menu = raw.get("data") or raw
         items, our_total = menu.cart_items(raw, [(c, q) for c, q in picks.values()])
         stored = client.set_cart(menu.STORE, items, raw_menu.get("sha1"))
+        page_menu = self.menu()
         result = {
             "at": datetime.now(TZ).strftime("%H:%M"),
             "by": by,
+            # {user_id: price}: who pays how much, for the Settle Up expense after payment.
+            "shares": {u: menu.describe(page_menu, c)["price"] for u, c in picked.items()},
             "items": sum(q for _, q in picks.values()),
             "our_total": our_total,
             "iding_total": None,
@@ -809,6 +819,91 @@ class App:
         self.record_ordered()
         number = f" Číslo objednávky {order['order_number']}." if order.get("order_number") else ""
         self.notify_orderer(order, f"Zaplaceno ✓.{number} Vyzvednutí v {order['target_time'][-5:]}.")
+        if self.settings["settleup"].get("enabled"):
+            threading.Thread(target=self.settleup_record, args=(order["id"],), daemon=True).start()
+
+    # --- Settle Up ------------------------------------------------------------
+
+    def settleup_account(self, environment: str | None = None) -> dict:
+        """The stored Settle Up account of an environment (the chosen one by default)."""
+        config = self.settings["settleup"]
+        environment = environment or config.get("environment") or "sandbox"
+        account = config.setdefault(environment, {})
+        for key, value in SETTLEUP_ACCOUNT.items():
+            account.setdefault(key, json.loads(json.dumps(value)))
+        return account
+
+    def settleup_client(self, environment: str, api_key: str, email: str, password: str) -> SettleUp:
+        client = SettleUp(environment, api_key)
+        client.login(email, password)
+        return client
+
+    def settleup_expense(self, order: dict, approved: dict) -> dict:
+        """What goes to Settle Up for a paid order: payer and split by member id. Raises SettleUpError
+        when someone has no Settle Up member, so nothing half-right is written."""
+        account = self.settleup_account()
+        mapping = account["members"]
+        names = {u["id"]: u["name"] for u in self.users()}
+        shares = approved.get("shares") or {}
+        if not account["group_id"]:
+            raise SettleUpError("V nastavení není vybraná skupina Settle Up.")
+        if not shares:
+            raise SettleUpError("Schválení nemá rozpis po lidech (schváleno ve starší verzi doplňku).")
+        payer = order.get("by_id")
+        missing = [names.get(u, u) for u in dict.fromkeys([payer, *shares]) if not mapping.get(u)]
+        if missing:
+            raise SettleUpError("Bez člena v Settle Up: " + ", ".join(missing) + ". Přiřaď je v nastavení.")
+        split: dict[str, float] = {}
+        for user_id, price in shares.items():  # two HA users on one Settle Up member add up
+            split[mapping[user_id]] = split.get(mapping[user_id], 0) + price
+        total = order.get("total") or sum(shares.values())
+        number = f" č. {order['order_number']}" if order.get("order_number") else ""
+        return {"paid_by": mapping[payer], "shares": split, "amount": total,
+                "purpose": f"Snídaně 金華47{number}", "group_id": account["group_id"]}
+
+    def settleup_record(self, order_id) -> None:
+        """Write today's paid order to Settle Up once; the outcome is stored with the order."""
+        with self.lock:
+            self.choices()
+            order = dict(self.order or {})
+            approved = dict(self.approved or {})
+        if order.get("id") != order_id or (order.get("settleup") or {}).get("id"):
+            return
+        environment = self.settings["settleup"].get("environment", "sandbox")
+        account = self.settleup_account(environment)
+        try:
+            expense = self.settleup_expense(order, approved)
+            client = self.settleup_client(environment, account["api_key"], account["email"], account["password"])
+            now = datetime.now(TZ)
+            offset = now.strftime("%z")
+            tx_id = client.add_expense(
+                expense["group_id"], purpose=expense["purpose"], amount=expense["amount"], currency="TWD",
+                paid_by=expense["paid_by"], shares=expense["shares"],
+                when_ms=int(now.timestamp() * 1000), timezone=f"{offset[:3]}:{offset[3:]}",
+            )
+        except (SettleUpError, OSError, RuntimeError) as exc:  # OSError/RuntimeError: Home Assistant users
+            log(f"Settle Up ({environment}): objednávka {order_id} se nezapsala: {exc}")
+            self.set_order(only_id=order_id, settleup={"error": str(exc), "environment": environment})
+            self.notify_orderer(order, f"Do Settle Up se útrata nezapsala: {exc}")
+            return
+        log(f"Settle Up ({environment}): zapsáno {expense['amount']} NT$ do skupiny {account['group_name']} "
+            f"(transakce {tx_id}), platil {order.get('by')}, rozpis {json.dumps(expense['shares'])}.")
+        self.set_order(only_id=order_id, settleup={
+            "id": tx_id, "environment": environment, "group": account["group_name"],
+            "at": now.strftime("%H:%M"),
+        })
+
+    def settleup_retry(self) -> None:
+        """Try the Settle Up write again for today's paid order (after fixing the settings)."""
+        order = self.current_order(("paid", "ready", "closed"))
+        if (order.get("settleup") or {}).get("id"):
+            raise IdingError("Objednávka už v Settle Up je.")
+        if not self.settings["settleup"].get("enabled"):
+            raise IdingError("Settle Up je v nastavení vypnutý.")
+        self.settleup_record(order["id"])
+        error = (self.current_order(("paid", "ready", "closed")).get("settleup") or {}).get("error")
+        if error:
+            raise IdingError(error)
 
     def cancel_order(self) -> None:
         """Cancel a sent but unpaid order on iding."""
@@ -1469,6 +1564,10 @@ class Handler(BaseHTTPRequestHandler):
             self.guarded(self.post_settings, admin=True)
         elif route == "/api/admin/iding_test":
             self.guarded(self.post_iding_test, admin=True)
+        elif route == "/api/admin/settleup_groups":
+            self.guarded(self.post_settleup_groups, admin=True)
+        elif route == "/api/admin/settleup_retry":
+            self.guarded(lambda user: self.order_action(user, self.app.settleup_retry), admin=True)
         else:
             self.send_error(404)
 
@@ -1677,7 +1776,28 @@ class Handler(BaseHTTPRequestHandler):
                 "phone": app.settings["iding"]["phone"],
                 "password_set": bool(app.settings["iding"]["password"]),
             },
+            "settleup": self.settleup_view(),
         })
+
+    def settleup_view(self) -> dict:
+        """Settle Up settings for the page: both environments, without keys or passwords."""
+        app = self.app
+        return {
+            "enabled": bool(app.settings["settleup"].get("enabled")),
+            "environment": app.settings["settleup"].get("environment", "sandbox"),
+            **{
+                env: {
+                    "email": account["email"],
+                    "group_id": account["group_id"],
+                    "group_name": account["group_name"],
+                    "members": account["members"],
+                    "api_key_set": bool(account["api_key"]),
+                    "password_set": bool(account["password"]),
+                }
+                for env in ("sandbox", "live")
+                for account in [app.settleup_account(env)]
+            },
+        }
 
     def post_settings(self, user: dict) -> None:
         """Save the settings page. An empty iding password keeps the stored one."""
@@ -1708,9 +1828,57 @@ class Handler(BaseHTTPRequestHandler):
             elif iding.get("clear_password"):
                 settings["iding"]["password"] = ""
             self.save_users(body.get("users") or {}, valid_users, valid_phones)
+            self.save_settleup(body.get("settleup"))
             app.save_settings()
         log(f"{user['name']} uložil nastavení.")
-        self.send_json(200, {"ok": True, "password_set": bool(app.settings["iding"]["password"])})
+        self.send_json(200, {"ok": True, "password_set": bool(app.settings["iding"]["password"]),
+                             "settleup": self.settleup_view()})
+
+    def save_settleup(self, body) -> None:
+        """Apply the Settle Up section; caller holds the lock. Empty key or password keeps the stored one."""
+        if not isinstance(body, dict):
+            return
+        config = self.app.settings["settleup"]
+        environment = body.get("environment") if body.get("environment") in ("sandbox", "live") else "sandbox"
+        if environment != config.get("environment") or bool(body.get("enabled")) != bool(config.get("enabled")):
+            log(f"Settle Up: {'zapnuto' if body.get('enabled') else 'vypnuto'}, prostředí {environment}.")
+        config["enabled"], config["environment"] = bool(body.get("enabled")), environment
+        for env in ("sandbox", "live"):
+            entry = body.get(env)
+            if not isinstance(entry, dict):
+                continue
+            account = self.app.settleup_account(env)
+            account["email"] = str(entry.get("email") or "").strip()
+            for secret in ("api_key", "password"):
+                if entry.get(secret):
+                    account[secret] = str(entry[secret]).strip() if secret == "api_key" else str(entry[secret])
+            account["group_id"] = str(entry.get("group_id") or "")
+            account["group_name"] = str(entry.get("group_name") or "")[:200]
+            members = entry.get("members") if isinstance(entry.get("members"), dict) else {}
+            account["members"] = {str(u): str(m) for u, m in members.items() if m}
+
+    def post_settleup_groups(self, user: dict) -> None:
+        """Sign in to Settle Up with the typed (or stored) key and account; the user's groups and the
+        members of ?group_id (or of the stored group) for the page's selects."""
+        body = self.read_json()
+        environment = body.get("environment") if body.get("environment") in ("sandbox", "live") else "sandbox"
+        stored = self.app.settleup_account(environment)
+        try:
+            client = self.app.settleup_client(
+                environment,
+                str(body.get("api_key") or "").strip() or stored["api_key"],
+                str(body.get("email") or "").strip(),
+                str(body.get("password") or "") or stored["password"],
+            )
+            groups = client.groups()
+            group_id = str(body.get("group_id") or "")
+            members = client.members(group_id) if group_id in {g["id"] for g in groups} else []
+            name = client.user_name()
+        except SettleUpError as exc:
+            self.send_json(400, {"error": str(exc)})
+            return
+        log(f"Settle Up ({environment}): přihlášení ověřeno ({name}), {len(groups)} skupin.")
+        self.send_json(200, {"ok": True, "name": name, "groups": groups, "members": members})
 
     def post_iding_test(self, user: dict) -> None:
         """Try logging in to iding with the typed phone/password (or the stored password)."""

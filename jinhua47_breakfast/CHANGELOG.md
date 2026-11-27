@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.17.0
+
+- Integrace se Settle Up: po zaplacení se objednávka zapíše jako útrata do vybrané skupiny. Platí ten,
+  kdo objednal, a každý mu dluží cenu svého výběru (v NT$). V nastavení je sekce Settle Up s přepínačem
+  sandbox / live: každé prostředí má vlastní Web API klíč, účet, skupinu a přiřazení strávníků ke členům.
+  Výsledek zápisu je u objednávky, při chybě přijde objednavateli oznámení a jde to zkusit znovu.
+- Schválení si pamatuje cenu výběru každého strávníka (rozpis pro Settle Up).
+
 ## 0.16.0
 
 - Náhledy fotek jen z vlastních fotek; fotky z idingu se už nepoužívají ani nestahují. Set bez vlastní

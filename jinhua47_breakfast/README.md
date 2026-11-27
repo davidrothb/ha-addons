@@ -58,6 +58,31 @@ Správci vidí v horní liště ozubené kolečko a pod ním nastavují:
 - **Účet iding:** telefon a heslo, tlačítko **Ověřit přihlášení**. Kdo se přihlašuje jen přes LINE,
   musí si v účtu nastavit heslo. Heslo se uloží do `/data/settings.json` doplňku (je i v zálohách HA)
   a stránka ho už nikdy nezobrazí.
+- **Settle Up:** viz níže.
+
+## Settle Up
+
+Po zaplacení doplněk zapíše objednávku do skupiny v [Settle Up](https://settleup.io) jako útratu
+„Snídaně 金華47 č. …“ v NT$ (TWD): platil správce, který objednal, a každý strávník mu dluží cenu svého
+výběru (když iding účtuje jinak, rozpočítá se poměrně). Výsledek je vidět u objednávky v kartě
+**Dnešní objednávka**; když zápis selže (třeba strávník bez přiřazeného člena), přijde objednavateli
+oznámení a po opravě nastavení jde dát **Zapsat do Settle Up znovu**.
+
+Settle Up pouští aplikace nejdřív jen na testovací server (sandbox), live klíč vydá až po otestování:
+
+1. Zaregistruj aplikaci na [developers.settleup.io](https://developers.settleup.io/) a opiš si sandbox
+   Web API klíč.
+2. Na [sandboxu](https://settle-up-sandbox-app.web.app/) si založ účet **e-mailem a heslem** (doplněk
+   se přihlašuje jen tak; Google přihlášení nejde), skupinu a členy, jako jsou strávníci.
+3. V nastavení doplňku → Settle Up: prostředí **Sandbox**, klíč, e-mail, heslo,
+   **Přihlásit a načíst skupiny**, vyber skupinu, přiřaď strávníky ke členům, zapni zápis a ulož.
+4. Udělej objednávku (nebo víc) a zkontroluj na sandboxu útratu, dluhy a měnu.
+5. Na developers.settleup.io požádej o live klíč. Po schválení vyplň prostředí **Live** (skutečný účet,
+   pokud se přihlašuješ přes Google, požádej Settle Up o převod na e-mail a heslo), vyber skupinu,
+   přiřaď členy a přepni prostředí na Live. Sandbox nastavení zůstane uložené.
+
+Klíče a hesla jsou v `/data/settings.json` (i v zálohách HA), stránka je nikdy nezobrazí.
+V dev režimu pracuje doplněk se skutečným Settle Up podle nastavení.
 
 ## Události pro automatizace
 
@@ -127,4 +152,4 @@ v obchodě s doplňky dej **⋮ → Zkontrolovat aktualizace** a doplněk se obj
 - [ ] Celkové statistiky útraty (celkem i po lidech) s ekvivalentem útraty.
 - [ ] Dashboard v Home Assistantu.
 - [ ] Část dashboardu na Google Cast (zobrazení na Chromecastu nebo Nest Hubu).
-- [ ] Integrace se Settle Up: po zaplacení zapsat útratu, kdo platil a kolik dluží ostatní.
+- [x] Integrace se Settle Up: po zaplacení zapsat útratu, kdo platil a kolik dluží ostatní.
