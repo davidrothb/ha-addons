@@ -439,17 +439,19 @@ class App:
     def visible(self, user: dict) -> bool:
         return self.view(user) == "open"
 
-    def open_ordering(self, by: str, invite: bool) -> None:
+    def open_ordering(self, by: str, invite: bool) -> bool:
         """Open today's ordering; with invite, the invitations are going out now (the admin chooses,
-        also on a second opening the same day)."""
+        also on a second opening the same day). True when it was closed until now."""
         with self.lock:
             self.choices()
             now = datetime.now(TZ).strftime("%H:%M")
-            if self.opened is None:
+            opening = self.opened is None
+            if opening:
                 self.opened = {"by": by, "at": now}
             if invite:
                 self.invited = now
             self.save_choices()
+            return opening
 
     def invite_members(self, opener_id: str) -> None:
         """"Ahoj <přezdívka>, <hláška z denních oznámení>" with "Klikni zde a objednej." to every
@@ -708,6 +710,10 @@ class App:
             "by_user_id": order.get("by_id"),
         }
 
+        self.fire_event(event, data)
+
+    def fire_event(self, event: str, data: dict) -> None:
+        """Send a Home Assistant event in the background and log it."""
         def fire() -> None:
             log(f"Událost → {event}: {json.dumps(data, ensure_ascii=False)}")
             if self.dev:
@@ -1832,8 +1838,13 @@ class Handler(BaseHTTPRequestHandler):
         # e.g. from a page loaded before 0.16.0, opens ordering without sending any.
         body = self.read_json()
         invite = isinstance(body, dict) and body.get("invite") is True
-        self.app.open_ordering(user["name"], invite)
+        opening = self.app.open_ordering(user["name"], invite)
         log(f"{user['name']} zahájil objednávání" + ("." if invite else " bez pozvánek."))
+        if opening:  # for automations (e.g. the TV); not when it was open already
+            self.app.fire_event("jinhua47_breakfast_opened", {
+                "by": user["name"], "by_user_id": user["id"], "invite": invite,
+                "round": len(self.app.earlier_orders) + 1,
+            })
         if invite:  # in the background: a slow phone must not hold up the page
             threading.Thread(target=self.app.invite_members, args=(user["id"],), daemon=True).start()
         self.get_order(user)

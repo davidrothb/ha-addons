@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.18.6
+
+- Nová událost `jinhua47_breakfast_opened`, když správce zahájí objednávání (data `by`, `by_user_id`,
+  `invite`, `round`), třeba pro automatizaci, která pustí dashboard na TV. Při opakovaném zahájení už
+  otevřeného objednávání se neposílá.
+- Dashboard Snídaně TV je celý bílý (pozadí i karty, tmavý text), ať má Home Assistant nebo Chromecast
+  jakýkoli motiv: vnutí to neviditelná karta `custom:jinhua47-white-theme` ze stejného skriptu jako
+  ukazatel postupu, jen dokud je dashboard otevřený. Rozvržení 4, přepíše se při startu, pokud nebyl
+  ručně upravený.
+
 ## 0.18.5
 
 - Dashboard Snídaně TV (rozvržení 3, přepíše se při startu, pokud nebyl ručně upravený):

@@ -17,11 +17,12 @@ DASHBOARD_PATH = "snidane-tv"  # Home Assistant wants a hyphen in a dashboard's 
 VIEW_PATH = "stav"
 # Bump when the layout below changes: the dashboard is rewritten once on the next start, unless the
 # user removed MARKER from it (then it is theirs and stays as it is).
-LAYOUT_VERSION = 3
+LAYOUT_VERSION = 4
 MARKER = "jinhua47_breakfast_layout"
 MEDIA_PLAYER = "media_player.spotify_david_rothbauer"  # media-control card at the bottom
 CARD_SOURCE = Path(__file__).parent / "progress-card.js"
 CARD_TYPE = "custom:jinhua47-progress-card"
+WHITE_THEME_TYPE = "custom:jinhua47-white-theme"  # also in progress-card.js
 # Our resource is recognised by this prefix (the card= parameter is ignored by browsers).
 CARD_URL_PREFIX = "data:text/javascript;charset=utf-8;card=jinhua47-progress-card;base64,"
 STATE_REFRESH_SECONDS = 60  # also re-creates the sensor soon after Home Assistant restarts and forgets it
@@ -155,6 +156,7 @@ def dashboard_config() -> dict:
             "path": VIEW_PATH,
             "icon": "mdi:food-croissant",
             "type": "panel",
+            "background": "#ffffff",  # all white on the TV (the default theme's page is light grey)
             "cards": [{
                 "type": "vertical-stack",
                 "cards": [
@@ -172,6 +174,7 @@ def dashboard_config() -> dict:
                                         "state_not": ["unavailable", "unknown"]}],
                         "card": {"type": "media-control", "entity": MEDIA_PLAYER},
                     },
+                    {"type": WHITE_THEME_TYPE},  # invisible: forces white over the HA theme
                 ],
             }],
         }],

@@ -89,13 +89,15 @@ navázat automatizace (spouštěč **Ruční událost** / `platform: event`):
 
 | Událost | Kdy |
 | --- | --- |
+| `jinhua47_breakfast_opened` | správce zahájil objednávání (ne když už otevřené bylo) |
 | `jinhua47_breakfast_ordered` | objednávka odeslaná na iding (ještě nezaplacená) |
 | `jinhua47_breakfast_paid` | zaplaceno |
 | `jinhua47_breakfast_ready` | obchod ji označil jako připravenou k vyzvednutí |
 | `jinhua47_breakfast_closed` | vyřízená (vyzvednutá) |
 | `jinhua47_breakfast_cancelled` | zrušená |
 
-Data události: `stage`, `order_id`, `order_number`, `total` (NT$), `items` (počet setů),
+Data `opened`: `by`, `by_user_id` (kdo zahájil), `invite` (zda šly pozvánky), `round` (kolikáté kolo
+dne). Data ostatních událostí: `stage`, `order_id`, `order_number`, `total` (NT$), `items` (počet setů),
 `pickup_time` (`HH:MM`), `pickup` (`YYYY-MM-DD HH:MM`), `by` a `by_user_id` (kdo objednal).
 Každá odeslaná událost je i v logu doplňku („Událost …“).
 
