@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.18.4
+
+- Oznámení s odkazem na platbu otevře LINE i na Androidu: aplikace Home Assistant tam odkaz `line://`
+  z oznámení neotevřela, teď dostane Android intent pro aplikaci LINE (`jp.naver.line.android`).
+  iOS dostává odkaz `line://` beze změny.
+
 ## 0.18.3
 
 - Pozvánky odejdou jen tehdy, když je správce v okně „Zahájit objednávání“ výslovně zvolí. Dřív je

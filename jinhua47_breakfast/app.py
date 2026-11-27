@@ -40,6 +40,7 @@ from settleup import SettleUp, SettleUpError
 
 SUPERVISOR = "http://supervisor"
 INGRESS_PROXY_IP = "172.30.32.2"
+LINE_PACKAGE = "jp.naver.line.android"  # LINE on Android, opens the LINE Pay links from notifications
 HERE = Path(__file__).parent
 # Extra notification data per level (Companion app): "high" is delivered at once even when the phone
 # saves power (Android priority/ttl, iOS time-sensitive); "alarm" also rings on Android's alarm
@@ -170,6 +171,14 @@ def header_text(value: str) -> str:
         return value.encode("latin-1").decode("utf-8")
     except (UnicodeEncodeError, UnicodeDecodeError):
         return value
+
+
+def android_click_action(url: str) -> str:
+    """The Companion app on Android opens only https links and HA paths from a notification tap, not
+    custom schemes such as LINE Pay's line://; an intent URI hands line:// links to the LINE app."""
+    if url.startswith("line://"):
+        return f"intent://{url[len('line://'):]}#Intent;scheme=line;package={LINE_PACKAGE};end"
+    return url
 
 
 def supervisor_call(method: str, path: str, body: dict | None = None):
@@ -1512,11 +1521,13 @@ class App:
         Every notification is logged with its recipient, text and link, and whether Home Assistant
         accepted it; a failure is logged and then raised to the caller."""
         target = url or self.panel_path
+        # iOS reads `url` (an app link like line:// works as it is), Android `clickAction`.
         level = self.alert_level(service) if level is None else level  # level: the test uses the form's
         payload = {
             "title": title,
             "message": message,
-            "data": {**({"url": target, "clickAction": target} if target else {}), **ALERT_DATA.get(level, {})},
+            "data": {**({"url": target, "clickAction": android_click_action(target)} if target else {}),
+                     **ALERT_DATA.get(level, {})},
         }
         recipient = f"{who} (notify.{service})" if who else f"notify.{service}"
         log(f"Oznámení → {recipient}: „{title}“ / „{message}“, odkaz {target or '–'}"
