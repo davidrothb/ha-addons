@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.18.1
+
+- Oprava sestavení: `settleup.py` a `tv.py` chyběly v `.dockerignore`, takže se 0.17.0 a 0.18.0
+  nesestavily (`"/settleup.py": not found`).
+
 ## 0.18.0
 
 - Entita `sensor.jinhua47_breakfast` se stavem dnešní objednávky (`idle`, `choosing`, `approved`,
